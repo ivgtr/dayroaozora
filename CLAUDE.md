@@ -15,3 +15,10 @@ pnpm test:watch   # Vitest (ウォッチモード)
 ## References
 
 プロジェクトのドメイン知識・設計判断・要件は [.docs/README.md](.docs/README.md) を参照。
+
+## Active Technologies
+- TypeScript 6.0.2 / Next.js 16.2.2 (App Router) + React 19.2.4, Next.js 16.2.2 (002-reading-experience)
+- localStorage（TodayState） (002-reading-experience)
+
+## Recent Changes
+- 002-reading-experience: Added TypeScript 6.0.2 / Next.js 16.2.2 (App Router) + React 19.2.4, Next.js 16.2.2

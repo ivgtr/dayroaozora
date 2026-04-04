@@ -19,3 +19,15 @@ export interface WorkResponse {
 export interface ErrorResponse {
   error: string;
 }
+
+export interface TodayState {
+  date: string;
+  workId: number;
+  progress: number;
+  viewPosition: number;
+  tapCount: number;
+  startedAt: string;
+  completed: boolean;
+}
+
+export type ReadingPhase = "loading" | "transitioning" | "reading" | "error";

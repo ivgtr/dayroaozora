@@ -1,0 +1,26 @@
+.sentence {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text-focus);
+  transition: var(--transition-focus);
+  max-width: var(--max-width-body);
+  margin: 0 auto;
+  padding: 0.5em 1rem;
+}
+
+.sentence[data-distance="0"] {
+  opacity: var(--opacity-focus);
+}
+
+.sentence[data-distance="1"] {
+  opacity: var(--opacity-past-1);
+}
+
+.sentence[data-distance="2"] {
+  opacity: var(--opacity-past-2);
+}
+
+.sentence[data-distance="3"] {
+  opacity: var(--opacity-past-3);
+}

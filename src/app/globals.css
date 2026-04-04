@@ -1,3 +1,46 @@
+:root {
+  /* Typography */
+  --font-serif: "Noto Serif JP", serif;
+  --font-sans: system-ui, sans-serif;
+  --font-size-body: 17px;
+  --line-height-body: 1.9;
+  --max-width-body: 680px;
+
+  /* Colors — Light mode */
+  --color-bg: #fafaf9;
+  --color-text-focus: #1a1a1a;
+  --color-text-past: #1a1a1a;
+  --color-accent: #6b7280;
+
+  /* Opacity gradient (focus distance) */
+  --opacity-focus: 1;
+  --opacity-past-1: 0.55;
+  --opacity-past-2: 0.35;
+  --opacity-past-3: 0.25;
+
+  /* Transitions */
+  --transition-focus: opacity 0.2s ease;
+  --transition-progress: width 0.3s ease-out;
+  --transition-fade: opacity 0.4s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #171717;
+    --color-text-focus: #d4d4d4;
+    --color-text-past: #d4d4d4;
+    --color-accent: #9ca3af;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-focus: none;
+    --transition-progress: none;
+    --transition-fade: none;
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -7,7 +50,9 @@
 }
 
 body {
-  font-family: sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text-focus);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

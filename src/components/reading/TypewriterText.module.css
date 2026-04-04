@@ -1,0 +1,28 @@
+.text {
+  font-family: var(--font-serif);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+.cursor::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: var(--color-text-focus);
+  margin-left: 1px;
+  animation: blink 0.8s step-end infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor::after {
+    animation: none;
+  }
+}
