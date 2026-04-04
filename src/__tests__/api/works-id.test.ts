@@ -73,9 +73,7 @@ describe("GET /api/works/[id]", () => {
   });
 
   it("returns 404 when work is not found", async () => {
-    const { fetchWork, WorkNotFoundError } = await import(
-      "@/lib/libroaozora"
-    );
+    const { fetchWork, WorkNotFoundError } = await import("@/lib/libroaozora");
     vi.mocked(fetchWork).mockRejectedValueOnce(new WorkNotFoundError(99999));
 
     const response = await GET(createRequest("99999"), createParams("99999"));
@@ -87,9 +85,7 @@ describe("GET /api/works/[id]", () => {
 
   it("returns 502 when libroaozora API fails", async () => {
     const { fetchWork } = await import("@/lib/libroaozora");
-    vi.mocked(fetchWork).mockRejectedValueOnce(
-      new Error("libroaozora API error: 503")
-    );
+    vi.mocked(fetchWork).mockRejectedValueOnce(new Error("libroaozora API error: 503"));
 
     const response = await GET(createRequest("12345"), createParams("12345"));
     const data = await response.json();

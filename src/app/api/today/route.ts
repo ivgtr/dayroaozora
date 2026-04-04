@@ -13,9 +13,6 @@ export async function GET() {
       },
     });
   } catch {
-    return NextResponse.json(
-      { error: "Failed to load work list" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to load work list" }, { status: 500 });
   }
 }

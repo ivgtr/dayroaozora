@@ -12,8 +12,11 @@ function toJstMs(now: Date): number {
 export function getDayIndex(now: Date = new Date()): number {
   const jstMs = toJstMs(now);
   const jstDate = new Date(jstMs);
-  const jstMidnightMs =
-    Date.UTC(jstDate.getUTCFullYear(), jstDate.getUTCMonth(), jstDate.getUTCDate());
+  const jstMidnightMs = Date.UTC(
+    jstDate.getUTCFullYear(),
+    jstDate.getUTCMonth(),
+    jstDate.getUTCDate()
+  );
   return Math.floor((jstMidnightMs - (EPOCH + JST_OFFSET_MS)) / MS_PER_DAY);
 }
 
@@ -28,14 +31,15 @@ export function formatJstDate(now: Date = new Date()): string {
 export function getSecondsUntilJstMidnight(now: Date = new Date()): number {
   const jstMs = toJstMs(now);
   const jstDate = new Date(jstMs);
-  const nextMidnightUtcMs =
-    Date.UTC(jstDate.getUTCFullYear(), jstDate.getUTCMonth(), jstDate.getUTCDate() + 1);
+  const nextMidnightUtcMs = Date.UTC(
+    jstDate.getUTCFullYear(),
+    jstDate.getUTCMonth(),
+    jstDate.getUTCDate() + 1
+  );
   return Math.ceil((nextMidnightUtcMs - jstMs) / 1000);
 }
 
-export async function getTodayWork(
-  now: Date = new Date()
-): Promise<TodayResponse> {
+export async function getTodayWork(now: Date = new Date()): Promise<TodayResponse> {
   const ids = await getIdList();
   const dayIndex = getDayIndex(now);
 
