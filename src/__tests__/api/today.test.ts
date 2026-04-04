@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "@/app/api/today/route";
 
 vi.mock("@/lib/id-list", () => ({
-  getIdList: vi.fn().mockResolvedValue([100, 200, 300, 400, 500]),
+  getIdList: vi.fn().mockReturnValue([100, 200, 300, 400, 500]),
 }));
 
 describe("GET /api/today", () => {
@@ -48,7 +48,9 @@ describe("GET /api/today", () => {
 
   it("returns 500 when ID list loading fails", async () => {
     const { getIdList } = await import("@/lib/id-list");
-    vi.mocked(getIdList).mockRejectedValueOnce(new Error("R2 unavailable"));
+    vi.mocked(getIdList).mockImplementationOnce(() => {
+      throw new Error("ID list unavailable");
+    });
 
     const response = await GET();
     const data = await response.json();

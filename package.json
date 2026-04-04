@@ -9,6 +9,7 @@
     "lint": "eslint src/",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
+    "generate:id-list": "node scripts/generate-id-list.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
