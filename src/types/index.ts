@@ -53,3 +53,15 @@ export interface StreakData {
   lastDate: string;
   best: number;
 }
+
+export type Theme = "light" | "dark" | "system";
+
+export interface ShareTextParams {
+  title: string;
+  author: string;
+  readingTime: number;
+  tapCount: number;
+  streak: number;
+  isBookshelfReread: boolean;
+  siteUrl: string;
+}
