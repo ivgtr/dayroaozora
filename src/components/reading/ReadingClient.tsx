@@ -15,11 +15,14 @@ import {
 import { formatJstDate } from "@/lib/date-utils";
 import { getWorkContent, cleanupExpiredCache, prefetchWork } from "@/lib/content-cache";
 import { useStreak } from "@/hooks/useStreak";
+import { useTheme } from "@/hooks/useTheme";
 import ReadingView from "./ReadingView";
 import ReadingHeader from "./ReadingHeader";
 import ProgressFooter from "./ProgressFooter";
 import CompletionScreen from "./CompletionScreen";
+import ErrorScreen from "./ErrorScreen";
 import LoadingScreen from "./LoadingScreen";
+import InfoModal from "@/components/InfoModal";
 import styles from "./ReadingClient.module.css";
 
 const MIN_LOADING_MS = 800;
@@ -51,7 +54,9 @@ export default function ReadingClient() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [bookshelfEntryStatus, setBookshelfEntryStatus] = useState<BookshelfEntry["status"] | null>(null);
   const [completionData, setCompletionData] = useState<{ readingTime: number; tapCount: number } | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
   const { streak, updateStreak } = useStreak();
+  const { toggleTheme } = useTheme();
   const progressRef = useRef(0);
   const viewPositionRef = useRef(0);
 
@@ -61,11 +66,14 @@ export default function ReadingClient() {
 
       const saved = loadTodayState();
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
       const [todayJson] = await Promise.all([
-        fetch("/api/today").then((res) => {
+        fetch("/api/today", { signal: controller.signal }).then((res) => {
           if (!res.ok) throw new Error("Failed to fetch today's work");
           return res.json();
-        }),
+        }).finally(() => clearTimeout(timeoutId)),
         delay(MIN_LOADING_MS),
       ]);
 
@@ -244,6 +252,9 @@ export default function ReadingClient() {
     loadDailyData();
   }, [isBookshelfReread, loadDailyData]);
 
+  const handleInfoOpen = useCallback(() => setInfoOpen(true), []);
+  const handleInfoClose = useCallback(() => setInfoOpen(false), []);
+
   const handleFavoriteAdd = useCallback(() => {
     if (!todayState || isFavorite) return;
     const firstLine = sentences[0] ?? "";
@@ -298,15 +309,7 @@ export default function ReadingClient() {
 
   if (phase === "error") {
     return (
-      <div className={styles.error}>
-        <p>読み込みに失敗しました</p>
-        <button
-          className={styles.retryButton}
-          onClick={isBookshelfReread ? loadBookshelfData : loadDailyData}
-        >
-          再試行
-        </button>
-      </div>
+      <ErrorScreen onRetry={isBookshelfReread ? loadBookshelfData : loadDailyData} />
     );
   }
 
@@ -330,7 +333,10 @@ export default function ReadingClient() {
           mode={isBookshelfReread ? "bookshelf" : "daily"}
           isFavorite={isFavorite}
           onFavoriteAdd={handleFavoriteAdd}
+          onThemeToggle={toggleTheme}
+          onInfoOpen={handleInfoOpen}
         />
+        <InfoModal open={infoOpen} onClose={handleInfoClose} />
         <ReadingView
           sentences={sentences}
           initialState={todayState}
