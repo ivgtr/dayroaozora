@@ -22,6 +22,25 @@
   --transition-focus: opacity 0.2s ease;
   --transition-progress: width 0.3s ease-out;
   --transition-fade: opacity 0.4s ease;
+
+  /* Completion Screen */
+  --completion-title-size: 1.75rem;
+  --completion-author-size: 1.125rem;
+  --completion-stat-size: 0.875rem;
+  --completion-streak-size: 1rem;
+
+  /* Bookshelf */
+  --bookshelf-card-min-width: 140px;
+  --bookshelf-card-gap: 0.75rem;
+  --bookshelf-card-padding: 0.75rem;
+  --bookshelf-card-border: 1px solid var(--color-accent);
+  --bookshelf-badge-size: 0.75rem;
+  --bookshelf-edit-btn-size: 1.5rem;
+
+  /* Colors — Bookshelf & Completion */
+  --color-muted: #9ca3af;
+  --color-danger: #ef4444;
+  --color-favorite: #e11d48;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +49,9 @@
     --color-text-focus: #d4d4d4;
     --color-text-past: #d4d4d4;
     --color-accent: #9ca3af;
+    --color-muted: #6b7280;
+    --color-danger: #f87171;
+    --color-favorite: #fb7185;
   }
 }
 

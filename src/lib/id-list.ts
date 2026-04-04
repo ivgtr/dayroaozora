@@ -1,21 +1,16 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 let cachedIds: number[] | null = null;
 
-export async function getIdList(): Promise<number[]> {
+export function getIdList(): number[] {
   if (cachedIds) {
     return cachedIds;
   }
 
-  const url = process.env.R2_ID_LIST_URL;
-  if (!url) {
-    throw new Error("R2_ID_LIST_URL is not configured");
-  }
+  const filePath = join(process.cwd(), "public/data/id-list.json");
+  const ids: number[] = JSON.parse(readFileSync(filePath, "utf-8"));
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ID list: ${response.status}`);
-  }
-
-  const ids: number[] = await response.json();
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new Error("ID list is empty or invalid");
   }

@@ -1,21 +1,57 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import styles from "./ReadingHeader.module.css";
 
-export default function ReadingHeader() {
+interface ReadingHeaderProps {
+  mode?: "daily" | "bookshelf";
+  isFavorite?: boolean;
+  onFavoriteAdd?: () => void;
+}
+
+export default function ReadingHeader({
+  mode = "daily",
+  isFavorite = false,
+  onFavoriteAdd,
+}: ReadingHeaderProps) {
+  const router = useRouter();
+
   return (
     <header className={styles.header}>
-      <button
-        className={`${styles.button} ${styles.buttonFirst}`}
-        type="button"
-        aria-label="本棚"
-      >
-        <span aria-hidden="true">📚</span>
-      </button>
+      {mode === "daily" ? (
+        <button
+          className={`${styles.button} ${styles.buttonFirst}`}
+          type="button"
+          aria-label="本棚"
+          onClick={() => router.push("/bookshelf")}
+        >
+          <span aria-hidden="true">📚</span>
+        </button>
+      ) : (
+        <button
+          className={`${styles.button} ${styles.buttonFirst}`}
+          type="button"
+          aria-label="本棚に戻る"
+          onClick={() => router.push("/bookshelf")}
+        >
+          <span aria-hidden="true">← 本棚</span>
+        </button>
+      )}
       <button className={styles.button} type="button" aria-label="情報">
         <span aria-hidden="true">ℹ️</span>
       </button>
-      <button className={styles.button} type="button" aria-label="お気に入り">
-        <span aria-hidden="true">♡</span>
-      </button>
+      {mode === "daily" && (
+        <button
+          className={styles.button}
+          type="button"
+          aria-label={isFavorite ? "お気に入り済み" : "お気に入りに追加"}
+          onClick={onFavoriteAdd}
+        >
+          <span aria-hidden="true" className={isFavorite ? styles.favoriteActive : undefined}>
+            {isFavorite ? "♥" : "♡"}
+          </span>
+        </button>
+      )}
       <button className={styles.button} type="button" aria-label="テーマ切替">
         <span aria-hidden="true">🌓</span>
       </button>

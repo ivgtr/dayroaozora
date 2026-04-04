@@ -19,6 +19,8 @@ pnpm test:watch   # Vitest (ウォッチモード)
 ## Active Technologies
 - TypeScript 6.0.2 / Next.js 16.2.2 (App Router) + React 19.2.4, Next.js 16.2.2 (002-reading-experience)
 - localStorage（TodayState） (002-reading-experience)
+- TypeScript 6.0.2 + Next.js 16.2.2 (App Router), React 19.2.4 (003-completion-bookshelf)
+- localStorage (`dayro:bookshelf`, `dayro:streak`, `dayro:today`), IndexedDB (`content_cache` — Phase 2 で実装済み前提) (003-completion-bookshelf)
 
 ## Recent Changes
 - 002-reading-experience: Added TypeScript 6.0.2 / Next.js 16.2.2 (App Router) + React 19.2.4, Next.js 16.2.2

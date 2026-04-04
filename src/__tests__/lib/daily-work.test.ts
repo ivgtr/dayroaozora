@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getDayIndex, formatJstDate, getSecondsUntilJstMidnight } from "@/lib/daily-work";
+import { getDayIndex, formatJstDate, getSecondsUntilJstMidnight } from "@/lib/date-utils";
 
 describe("getDayIndex", () => {
   it("returns 0 for the epoch date (2026-01-01 JST)", () => {

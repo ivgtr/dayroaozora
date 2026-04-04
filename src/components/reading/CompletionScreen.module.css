@@ -1,0 +1,64 @@
+.container {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg);
+  padding: 2rem 1.5rem;
+}
+
+.content {
+  max-width: var(--max-width-body);
+  width: 100%;
+  text-align: center;
+}
+
+.title {
+  font-family: var(--font-serif);
+  font-size: var(--completion-title-size);
+  font-weight: 700;
+  color: var(--color-text-focus);
+  line-height: 1.5;
+  margin-bottom: 0.5rem;
+}
+
+.author {
+  font-family: var(--font-serif);
+  font-size: var(--completion-author-size);
+  color: var(--color-accent);
+  margin-bottom: 2rem;
+}
+
+.stats {
+  font-family: var(--font-sans);
+  font-size: var(--completion-stat-size);
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.separator {
+  opacity: 0.5;
+}
+
+.streak {
+  font-family: var(--font-sans);
+  font-size: var(--completion-streak-size);
+  color: var(--color-text-focus);
+  margin-bottom: 2rem;
+}
+
+.shareButton {
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  padding: 0.5rem 1.5rem;
+  border: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
+  border-radius: 4px;
+  cursor: not-allowed;
+  opacity: 0.4;
+}
