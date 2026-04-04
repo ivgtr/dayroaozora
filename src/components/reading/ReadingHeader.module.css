@@ -25,3 +25,7 @@
 .buttonFirst {
   margin-right: auto;
 }
+
+.favoriteActive {
+  color: var(--color-favorite);
+}

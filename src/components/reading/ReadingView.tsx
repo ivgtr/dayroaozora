@@ -13,16 +13,22 @@ interface ReadingViewProps {
   sentences: string[];
   initialState: TodayState;
   onProgressChange?: (progress: number) => void;
+  onViewPositionChange?: (viewPosition: number) => void;
   isResuming?: boolean;
   onDateChange?: () => void;
+  onComplete?: (tapCount: number) => void;
+  skipPersist?: boolean;
 }
 
 export default function ReadingView({
   sentences,
   initialState,
   onProgressChange,
+  onViewPositionChange,
   isResuming = false,
   onDateChange,
+  onComplete,
+  skipPersist = false,
 }: ReadingViewProps) {
   const sentenceElsRef = useRef<Map<number, HTMLParagraphElement>>(new Map());
   const scrollToSentenceRef = useRef<(index: number) => void>(() => {});
@@ -43,6 +49,8 @@ export default function ReadingView({
     totalSentences: sentences.length,
     onViewPositionChange: handleViewPositionChange,
     onDateChange,
+    onComplete,
+    skipPersist,
   });
 
   const { displayedText, isAnimating, skip } = useTypewriter({
@@ -75,6 +83,10 @@ export default function ReadingView({
   useEffect(() => {
     onProgressChange?.(progress);
   }, [progress, onProgressChange]);
+
+  useEffect(() => {
+    onViewPositionChange?.(viewPosition);
+  }, [viewPosition, onViewPositionChange]);
 
   useEffect(() => {
     if (isResuming && !resumeHandledRef.current) {
