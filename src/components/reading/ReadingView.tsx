@@ -176,14 +176,22 @@ export default function ReadingView({
     [],
   );
 
+  const handleInteraction = useCallback(() => {
+    if (isAnimating) {
+      skip();
+      return;
+    }
+    handleTap();
+  }, [isAnimating, skip, handleTap]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
-        handleTap();
+        handleInteraction();
       }
     },
-    [handleTap],
+    [handleInteraction],
   );
 
   const showTypewriter = isNewSentence;
@@ -193,7 +201,7 @@ export default function ReadingView({
       className={styles.container}
       tabIndex={0}
       role="application"
-      onClick={handleTap}
+      onClick={handleInteraction}
       onKeyDown={handleKeyDown}
     >
       <div className={styles.srOnly} aria-live="polite">
