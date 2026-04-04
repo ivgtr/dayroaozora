@@ -30,12 +30,17 @@
   --completion-streak-size: 1rem;
 
   /* Bookshelf */
-  --bookshelf-card-min-width: 140px;
-  --bookshelf-card-gap: 0.75rem;
-  --bookshelf-card-padding: 0.75rem;
-  --bookshelf-card-border: 1px solid var(--color-accent);
-  --bookshelf-badge-size: 0.75rem;
-  --bookshelf-edit-btn-size: 1.5rem;
+  --bookshelf-book-height: 150px;
+  --bookshelf-book-width: 100px;
+  --bookshelf-shelf-color: #c8c3bc;
+  --bookshelf-shelf-thickness: 8px;
+  --bookshelf-row-gap: 28px;
+  --bookshelf-edit-btn-size: 2rem;
+  --bookshelf-book-bg-1: #e8e4de;
+  --bookshelf-book-bg-2: #dfe3e8;
+  --bookshelf-book-bg-3: #e5e1d6;
+  --bookshelf-book-bg-4: #dce3de;
+  --bookshelf-book-bg-5: #e3dee4;
 
   /* Colors — Bookshelf & Completion */
   --color-muted: #6e747b;
@@ -51,6 +56,12 @@
   --color-muted: #8b929e;
   --color-danger: #f87171;
   --color-favorite: #fb7185;
+  --bookshelf-shelf-color: #3a3838;
+  --bookshelf-book-bg-1: #2a2826;
+  --bookshelf-book-bg-2: #26282c;
+  --bookshelf-book-bg-3: #2a2924;
+  --bookshelf-book-bg-4: #242a26;
+  --bookshelf-book-bg-5: #2a2628;
 }
 
 @media (prefers-reduced-motion: reduce) {

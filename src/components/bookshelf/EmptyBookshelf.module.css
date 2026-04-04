@@ -3,17 +3,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2rem;
+  gap: 1.5rem;
   padding: 3rem 1.5rem;
   min-height: 60dvh;
 }
 
-.shelf {
-  width: 80%;
-  max-width: 400px;
-  height: 1px;
-  background-color: var(--color-accent);
-  opacity: 0.3;
+.icon {
+  color: var(--color-muted);
+  opacity: 0.4;
 }
 
 .message {
