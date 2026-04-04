@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
+import { Noto_Serif_JP } from "next/font/google";
 import "./globals.css";
+
+const notoSerifJP = Noto_Serif_JP({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  display: "swap",
+  variable: "--font-serif",
+});
 
 export const metadata: Metadata = {
   title: "DayroAozora",
@@ -12,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="ja" className={notoSerifJP.variable}>
       <body>{children}</body>
     </html>
   );
