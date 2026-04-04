@@ -1,11 +1,24 @@
 import type { WorkResponse } from "@/types";
 
-interface LibroaozoraWork {
-  workId: number;
+interface LibroaozoraMetadata {
+  id: string;
   title: string;
-  author: string;
+  authors: { lastName: string; firstName: string; role: string }[];
+}
+
+interface LibroaozoraContent {
+  workId: string;
+  format: string;
   content: string;
-  charCount?: number;
+}
+
+function padWorkId(workId: number): string {
+  return String(workId).padStart(6, "0");
+}
+
+function formatAuthor(authors: LibroaozoraMetadata["authors"]): string {
+  const author = authors.find((a) => a.role === "author") ?? authors[0];
+  return author ? `${author.lastName} ${author.firstName}` : "";
 }
 
 export async function fetchWork(workId: number): Promise<WorkResponse> {
@@ -14,24 +27,33 @@ export async function fetchWork(workId: number): Promise<WorkResponse> {
     throw new Error("LIBROAOZORA_API_URL is not configured");
   }
 
-  const response = await fetch(`${baseUrl}/works/${workId}?format=plain`);
+  const id = padWorkId(workId);
+  const metaUrl = new URL(`/v1/works/${id}`, baseUrl);
+  const contentUrl = new URL(`/v1/works/${id}/content?format=plain`, baseUrl);
+  const [metaRes, contentRes] = await Promise.all([
+    fetch(metaUrl),
+    fetch(contentUrl),
+  ]);
 
-  if (response.status === 404) {
+  if (metaRes.status === 404 || contentRes.status === 404) {
     throw new WorkNotFoundError(workId);
   }
-
-  if (!response.ok) {
-    throw new Error(`libroaozora API error: ${response.status}`);
+  if (!metaRes.ok) {
+    throw new Error(`libroaozora API error (metadata): ${metaRes.status}`);
+  }
+  if (!contentRes.ok) {
+    throw new Error(`libroaozora API error (content): ${contentRes.status}`);
   }
 
-  const data: LibroaozoraWork = await response.json();
+  const meta: LibroaozoraMetadata = await metaRes.json();
+  const body: LibroaozoraContent = await contentRes.json();
 
   return {
-    workId: data.workId,
-    title: data.title,
-    author: data.author,
-    content: data.content,
-    charCount: data.charCount ?? data.content.length,
+    workId,
+    title: meta.title,
+    author: formatAuthor(meta.authors),
+    content: body.content,
+    charCount: body.content.length,
   };
 }
 
