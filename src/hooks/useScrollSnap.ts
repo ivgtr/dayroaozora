@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 
 interface UseScrollSnapOptions {
   sentenceRefs: React.RefObject<Map<number, HTMLElement>>;
@@ -6,10 +6,12 @@ interface UseScrollSnapOptions {
   onSnap: (index: number) => void;
   onUserScroll?: () => void;
   enabled: boolean;
+  initialFocusIndex?: number;
 }
 
 interface UseScrollSnapReturn {
   scrollToSentence: (index: number) => void;
+  focusIndex: number;
 }
 
 function prefersReducedMotion(): boolean {
@@ -23,6 +25,7 @@ export function useScrollSnap({
   onSnap,
   onUserScroll,
   enabled,
+  initialFocusIndex = 0,
 }: UseScrollSnapOptions): UseScrollSnapReturn {
   const visibilityMap = useRef<Map<number, number>>(new Map());
   const isScrollingProgrammatically = useRef(false);
@@ -32,6 +35,9 @@ export function useScrollSnap({
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const observedElements = useRef<Set<HTMLElement>>(new Set());
+  const rafRef = useRef<number | null>(null);
+  const totalVisibleRef = useRef(totalVisible);
+  const [focusIndex, setFocusIndex] = useState(initialFocusIndex);
 
   const onSnapRef = useRef(onSnap);
   const onUserScrollRef = useRef(onUserScroll);
@@ -49,6 +55,33 @@ export function useScrollSnap({
     enabledRef.current = enabled;
   }, [enabled]);
 
+  useEffect(() => {
+    totalVisibleRef.current = totalVisible;
+  }, [totalVisible]);
+
+  const computeFocusParagraph = useCallback(() => {
+    const map = sentenceRefs.current;
+    if (!map) return -1;
+
+    const viewportCenter = window.innerHeight / 2;
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i < totalVisibleRef.current; i++) {
+      const el = map.get(i);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      const elCenter = rect.top + rect.height / 2;
+      const distance = Math.abs(elCenter - viewportCenter);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+
+    return bestIndex;
+  }, [sentenceRefs]);
+
   const scrollToSentence = useCallback((index: number) => {
     const map = sentenceRefs.current;
     if (!map) return;
@@ -56,6 +89,7 @@ export function useScrollSnap({
     if (!el) return;
 
     isScrollingProgrammatically.current = true;
+    setFocusIndex(index);
 
     if (programmaticTimerRef.current !== null) {
       clearTimeout(programmaticTimerRef.current);
@@ -146,6 +180,17 @@ export function useScrollSnap({
       // Notify user scroll (for typewriter skip)
       onUserScrollRef.current?.();
 
+      // rAF-throttled focus update
+      if (rafRef.current === null) {
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          const newFocus = computeFocusParagraph();
+          if (newFocus >= 0) {
+            setFocusIndex(newFocus);
+          }
+        });
+      }
+
       if (debounceTimerRef.current !== null) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -201,17 +246,24 @@ export function useScrollSnap({
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     };
-  }, [enabled, sentenceRefs]);
+  }, [enabled, sentenceRefs, computeFocusParagraph]);
 
-  // Cleanup programmatic timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (programmaticTimerRef.current !== null) {
         clearTimeout(programmaticTimerRef.current);
       }
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
     };
   }, []);
 
-  return { scrollToSentence };
+  return { scrollToSentence, focusIndex };
 }

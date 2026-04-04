@@ -5,7 +5,7 @@ import type { TodayState, Paragraph as ParagraphData, StreakData } from "@/types
 import { useReadingState } from "@/hooks/useReadingState";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { useScrollSnap } from "@/hooks/useScrollSnap";
-import { flatToParagraphPos, paragraphDistance } from "@/lib/paragraph-index";
+import { flatToParagraphPos } from "@/lib/paragraph-index";
 import Paragraph from "./Paragraph";
 import CompletionSection from "./CompletionSection";
 import styles from "./ReadingView.module.css";
@@ -104,6 +104,11 @@ export default function ReadingView({
 
   const completionIndex = visibleParagraphCount;
 
+  const initialFocusIndex = useMemo(
+    () => flatToParagraphPos(paragraphs, initialState.viewPosition).paragraphIndex,
+    [paragraphs, initialState.viewPosition],
+  );
+
   const handleSnap = useCallback(
     (paraIndex: number) => {
       const para = paragraphsRef.current[paraIndex];
@@ -114,26 +119,31 @@ export default function ReadingView({
     [setViewPosition],
   );
 
-  const { scrollToSentence: scrollToParagraph } = useScrollSnap({
+  const { scrollToSentence: scrollToParagraph, focusIndex } = useScrollSnap({
     sentenceRefs: paragraphElsRef,
     totalVisible,
     onSnap: handleSnap,
     onUserScroll: skip,
     enabled: true,
+    initialFocusIndex,
   });
 
   useEffect(() => {
     scrollToParagraphRef.current = scrollToParagraph;
   }, [scrollToParagraph]);
 
-  // 描画後にスクロール（DOM が更新された後の正確な位置を使う）
+  // 新規文章追加時のみ自動スクロール
+  const prevProgressRef = useRef(initialState.progress);
   useEffect(() => {
-    const { paragraphIndex } = flatToParagraphPos(
-      paragraphsRef.current,
-      viewPosition,
-    );
-    scrollToParagraphRef.current(paragraphIndex);
-  }, [viewPosition]);
+    if (progress > prevProgressRef.current) {
+      const { paragraphIndex } = flatToParagraphPos(
+        paragraphsRef.current,
+        progress,
+      );
+      scrollToParagraphRef.current(paragraphIndex);
+    }
+    prevProgressRef.current = progress;
+  }, [progress]);
 
   useEffect(() => {
     onProgressChange?.(progress);
@@ -213,7 +223,7 @@ export default function ReadingView({
           para.sentences.length,
         );
         const isActivePara = pIdx === progressParaPos.paragraphIndex;
-        const dist = paragraphDistance(paragraphs, pIdx, viewPosition);
+        const dist = Math.min(Math.abs(focusIndex - pIdx), 3);
 
         return (
           <Paragraph
