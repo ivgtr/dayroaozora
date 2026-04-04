@@ -8,6 +8,8 @@ interface UseReadingStateOptions {
   totalSentences: number;
   onViewPositionChange?: (index: number) => void;
   onDateChange?: () => void;
+  onComplete?: (tapCount: number) => void;
+  skipPersist?: boolean;
 }
 
 interface UseReadingStateReturn {
@@ -24,6 +26,8 @@ export function useReadingState({
   totalSentences,
   onViewPositionChange,
   onDateChange,
+  onComplete,
+  skipPersist = false,
 }: UseReadingStateOptions): UseReadingStateReturn {
   const [state, setState] = useState<TodayState>(initialState);
   const [isNewSentence, setIsNewSentence] = useState(false);
@@ -39,8 +43,15 @@ export function useReadingState({
 
     const lastIndex = totalSentences - 1;
 
-    // At the last sentence: do nothing
+    // At the last sentence: trigger completion
     if (state.progress === lastIndex && state.viewPosition === lastIndex) {
+      const finalTapCount = state.tapCount + 1;
+      const next: TodayState = { ...state, tapCount: finalTapCount, completed: true };
+      setState(next);
+      if (!skipPersist) {
+        saveTodayState(next);
+      }
+      onComplete?.(finalTapCount);
       return;
     }
 
@@ -54,7 +65,9 @@ export function useReadingState({
       };
       setState(next);
       setIsNewSentence(true);
-      saveTodayState(next);
+      if (!skipPersist) {
+        saveTodayState(next);
+      }
       onViewPositionChange?.(next.viewPosition);
     } else if (state.viewPosition < state.progress) {
       // Catch up viewPosition toward progress
@@ -64,10 +77,12 @@ export function useReadingState({
         tapCount: state.tapCount + 1,
       };
       setState(next);
-      saveTodayState(next);
+      if (!skipPersist) {
+        saveTodayState(next);
+      }
       onViewPositionChange?.(next.viewPosition);
     }
-  }, [state, totalSentences, onViewPositionChange, onDateChange]);
+  }, [state, totalSentences, onViewPositionChange, onDateChange, onComplete, skipPersist]);
 
   const setViewPosition = useCallback(
     (index: number) => {
@@ -77,10 +92,12 @@ export function useReadingState({
         viewPosition: clamped,
       };
       setState(next);
-      saveTodayState(next);
+      if (!skipPersist) {
+        saveTodayState(next);
+      }
       onViewPositionChange?.(clamped);
     },
-    [state, onViewPositionChange],
+    [state, onViewPositionChange, skipPersist],
   );
 
   return {

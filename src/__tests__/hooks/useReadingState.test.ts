@@ -98,7 +98,8 @@ describe("useReadingState", () => {
   });
 
   describe("last sentence tap", () => {
-    it("does nothing when at the last sentence", () => {
+    it("calls onComplete with incremented tapCount when at the last sentence", () => {
+      const onComplete = vi.fn();
       const { result } = renderHook(() =>
         useReadingState({
           initialState: makeState({
@@ -107,6 +108,7 @@ describe("useReadingState", () => {
             tapCount: 5,
           }),
           totalSentences: 10,
+          onComplete,
         }),
       );
 
@@ -114,9 +116,11 @@ describe("useReadingState", () => {
         result.current.handleTap();
       });
 
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(onComplete).toHaveBeenCalledWith(6);
       expect(result.current.progress).toBe(9);
       expect(result.current.viewPosition).toBe(9);
-      expect(result.current.tapCount).toBe(5);
+      expect(result.current.tapCount).toBe(6);
     });
   });
 
@@ -143,10 +147,10 @@ describe("useReadingState", () => {
       );
     });
 
-    it("does not call saveTodayState on last-sentence no-op tap", () => {
+    it("calls saveTodayState with completed: true and incremented tapCount on last-sentence tap", () => {
       const { result } = renderHook(() =>
         useReadingState({
-          initialState: makeState({ progress: 9, viewPosition: 9 }),
+          initialState: makeState({ progress: 9, viewPosition: 9, tapCount: 3 }),
           totalSentences: 10,
         }),
       );
@@ -155,7 +159,10 @@ describe("useReadingState", () => {
         result.current.handleTap();
       });
 
-      expect(saveTodayState).not.toHaveBeenCalled();
+      expect(saveTodayState).toHaveBeenCalledTimes(1);
+      expect(saveTodayState).toHaveBeenCalledWith(
+        expect.objectContaining({ completed: true, tapCount: 4 }),
+      );
     });
 
     it("calls saveTodayState after setViewPosition", () => {
