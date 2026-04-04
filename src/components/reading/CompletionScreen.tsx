@@ -1,4 +1,5 @@
 import type { StreakData } from "@/types";
+import ShareButtons from "@/components/share/ShareButtons";
 import styles from "./CompletionScreen.module.css";
 
 interface CompletionScreenProps {
@@ -35,12 +36,17 @@ export default function CompletionScreen({
         </div>
 
         {showStreak && (
-          <p className={styles.streak}>{streak.current}日連続読了</p>
+          <p className={styles.streak}>🔥 {streak.current}日連続</p>
         )}
 
-        <button className={styles.shareButton} type="button" disabled>
-          共有
-        </button>
+        <ShareButtons
+          title={title}
+          author={author}
+          readingTime={readingTime}
+          tapCount={tapCount}
+          streak={streak?.current ?? 0}
+          isBookshelfReread={isBookshelfReread}
+        />
       </div>
     </div>
   );
