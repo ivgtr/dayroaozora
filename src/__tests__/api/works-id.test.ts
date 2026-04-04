@@ -10,7 +10,7 @@ vi.mock("@/lib/libroaozora", async (importActual) => {
       workId: 12345,
       title: "走れメロス",
       author: "太宰治",
-      content: "メロスは激怒した。",
+      blocks: [{ type: "paragraph", text: "メロスは激怒した。", nodes: [{ type: "text", text: "メロスは激怒した。" }] }],
       charCount: 9,
     }),
   };
@@ -37,7 +37,8 @@ describe("GET /api/works/[id]", () => {
     expect(data.workId).toBe(12345);
     expect(data.title).toBe("走れメロス");
     expect(data.author).toBe("太宰治");
-    expect(data.content).toBe("メロスは激怒した。");
+    expect(data.blocks).toHaveLength(1);
+    expect(data.blocks[0].text).toBe("メロスは激怒した。");
     expect(data.charCount).toBe(9);
   });
 
