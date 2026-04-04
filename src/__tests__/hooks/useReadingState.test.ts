@@ -6,7 +6,7 @@ vi.mock("@/lib/reading-state", () => ({
   saveTodayState: vi.fn(),
 }));
 
-vi.mock("@/lib/daily-work", () => ({
+vi.mock("@/lib/date-utils", () => ({
   formatJstDate: vi.fn(() => "2026-04-04"),
 }));
 
