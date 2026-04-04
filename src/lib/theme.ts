@@ -1,6 +1,7 @@
 import type { Theme } from "@/types";
 
-const STORAGE_KEY = "dayro:theme";
+export const STORAGE_KEY = "dayro:theme";
+const THEME_ATTRIBUTE = "data-theme";
 
 export function loadTheme(): Theme {
   try {
@@ -36,6 +37,10 @@ export function toggleTheme(): "light" | "dark" {
   const current = getEffectiveTheme(loadTheme());
   const next = current === "light" ? "dark" : "light";
   saveTheme(next);
-  document.documentElement.dataset.theme = next;
+  document.documentElement.setAttribute(THEME_ATTRIBUTE, next);
   return next;
+}
+
+export function generateThemeScript(): string {
+  return `(function(){try{var t=localStorage.getItem("${STORAGE_KEY}");var d=(t==="light"||t==="dark")?t:matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";document.documentElement.setAttribute("${THEME_ATTRIBUTE}",d)}catch(e){}})()`;
 }

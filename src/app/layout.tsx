@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Serif_JP } from "next/font/google";
+import { ThemeScript } from "@/components/ThemeScript";
 import "./globals.css";
 
 const notoSerifJP = Noto_Serif_JP({
@@ -28,11 +29,7 @@ export default function RootLayout({
   return (
     <html lang="ja" className={notoSerifJP.variable} suppressHydrationWarning>
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem("dayro:theme");var d=(t==="light"||t==="dark")?t:matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";document.documentElement.dataset.theme=d})()`,
-          }}
-        />
+        <ThemeScript />
       </head>
       <body>{children}</body>
     </html>
