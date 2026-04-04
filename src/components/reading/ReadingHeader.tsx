@@ -7,12 +7,16 @@ interface ReadingHeaderProps {
   mode?: "daily" | "bookshelf";
   isFavorite?: boolean;
   onFavoriteAdd?: () => void;
+  onThemeToggle?: () => void;
+  onInfoOpen?: () => void;
 }
 
 export default function ReadingHeader({
   mode = "daily",
   isFavorite = false,
   onFavoriteAdd,
+  onThemeToggle,
+  onInfoOpen,
 }: ReadingHeaderProps) {
   const router = useRouter();
 
@@ -37,7 +41,7 @@ export default function ReadingHeader({
           <span aria-hidden="true">← 本棚</span>
         </button>
       )}
-      <button className={styles.button} type="button" aria-label="情報">
+      <button className={styles.button} type="button" aria-label="情報" onClick={onInfoOpen}>
         <span aria-hidden="true">ℹ️</span>
       </button>
       {mode === "daily" && (
@@ -52,7 +56,7 @@ export default function ReadingHeader({
           </span>
         </button>
       )}
-      <button className={styles.button} type="button" aria-label="テーマ切替">
+      <button className={styles.button} type="button" aria-label="テーマ切替" onClick={onThemeToggle}>
         <span aria-hidden="true">🌓</span>
       </button>
     </header>
