@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import type { TodayState, ReadingPhase, WorkResponse, BookshelfEntry } from "@/types";
+import type { TodayState, ReadingPhase, BookshelfEntry } from "@/types";
 import { parseSentences } from "@/lib/sentence-parser";
 import { loadTodayState, createInitialState } from "@/lib/reading-state";
 import {
@@ -13,6 +13,7 @@ import {
   updateReadingPosition,
 } from "@/lib/bookshelf";
 import { formatJstDate } from "@/lib/date-utils";
+import { getWorkContent, cleanupExpiredCache, prefetchWork } from "@/lib/content-cache";
 import { useStreak } from "@/hooks/useStreak";
 import ReadingView from "./ReadingView";
 import ReadingHeader from "./ReadingHeader";
@@ -70,9 +71,9 @@ export default function ReadingClient() {
 
       const workId: number = todayJson.today.workId;
 
-      const workRes = await fetch(`/api/works/${workId}`);
-      if (!workRes.ok) throw new Error("Failed to fetch work content");
-      const work: WorkResponse = await workRes.json();
+      const work = await getWorkContent(workId);
+
+      prefetchWork(todayJson.tomorrow.workId).catch(() => {});
 
       const parsed = parseSentences(work.content);
       setSentences(parsed);
@@ -119,12 +120,10 @@ export default function ReadingClient() {
     try {
       setPhase("loading");
 
-      const [workRes] = await Promise.all([
-        fetch(`/api/works/${bookshelfWorkId}`),
+      const [work] = await Promise.all([
+        getWorkContent(bookshelfWorkId),
         delay(MIN_LOADING_MS),
       ]);
-      if (!workRes.ok) throw new Error("Failed to fetch work content");
-      const work: WorkResponse = await workRes.json();
 
       const parsed = parseSentences(work.content);
       setSentences(parsed);
@@ -177,8 +176,12 @@ export default function ReadingClient() {
   }, [bookshelfWorkId]);
 
   useEffect(() => {
+    cleanupExpiredCache().catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (isBookshelfReread) {
-      loadBookshelfData();
+      loadBookshelfData(); // eslint-disable-line react-hooks/set-state-in-effect -- async data loader, setState is after await
     } else {
       loadDailyData();
     }
