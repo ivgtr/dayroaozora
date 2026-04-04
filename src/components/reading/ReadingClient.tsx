@@ -56,7 +56,7 @@ export default function ReadingClient() {
   const [completionData, setCompletionData] = useState<{ readingTime: number; tapCount: number } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const { streak, updateStreak } = useStreak();
-  const { toggleTheme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   const progressRef = useRef(0);
   const viewPositionRef = useRef(0);
 
@@ -333,6 +333,7 @@ export default function ReadingClient() {
           mode={isBookshelfReread ? "bookshelf" : "daily"}
           isFavorite={isFavorite}
           onFavoriteAdd={handleFavoriteAdd}
+          theme={theme}
           onThemeToggle={toggleTheme}
           onInfoOpen={handleInfoOpen}
         />

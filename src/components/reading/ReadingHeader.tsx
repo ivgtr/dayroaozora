@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { BookOpenIcon, InfoIcon, HeartIcon, HeartFilledIcon, MoonIcon, ArrowLeftIcon } from "@/components/icons";
+import { BookOpenIcon, InfoIcon, HeartIcon, HeartFilledIcon, MoonIcon, SunIcon, ArrowLeftIcon } from "@/components/icons";
 import styles from "./ReadingHeader.module.css";
 
 interface ReadingHeaderProps {
   mode?: "daily" | "bookshelf";
+  theme?: "light" | "dark";
   isFavorite?: boolean;
   onFavoriteAdd?: () => void;
   onThemeToggle?: () => void;
@@ -14,6 +15,7 @@ interface ReadingHeaderProps {
 
 export default function ReadingHeader({
   mode = "daily",
+  theme = "light",
   isFavorite = false,
   onFavoriteAdd,
   onThemeToggle,
@@ -58,7 +60,7 @@ export default function ReadingHeader({
         </button>
       )}
       <button className={styles.button} type="button" aria-label="テーマ切替" onClick={onThemeToggle}>
-        <MoonIcon />
+        {theme === "dark" ? <SunIcon /> : <MoonIcon />}
       </button>
     </header>
   );
