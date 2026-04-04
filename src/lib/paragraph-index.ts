@@ -21,17 +21,10 @@ export function flatToParagraphPos(
   return { paragraphIndex: 0, sentenceOffset: 0 };
 }
 
-/** 段落 index と viewPosition (フラット) から段落間の距離を算出 */
+/** 2つの段落インデックス間の距離を算出（双方向、最大3にクランプ） */
 export function paragraphDistance(
-  paragraphs: Paragraph[],
+  focusParagraphIndex: number,
   paragraphIndex: number,
-  flatViewPosition: number,
 ): number {
-  const viewParaIndex = flatToParagraphPos(
-    paragraphs,
-    flatViewPosition,
-  ).paragraphIndex;
-  const distance = viewParaIndex - paragraphIndex;
-  if (distance <= 0) return 0;
-  return Math.min(distance, 3);
+  return Math.min(Math.abs(focusParagraphIndex - paragraphIndex), 3);
 }

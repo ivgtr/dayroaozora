@@ -8,7 +8,10 @@ function s(text: string) {
 
 const sampleParagraphs: Paragraph[] = [
   { sentences: [s("太郎は走った。"), s("花子は笑った。")], startIndex: 0 },
-  { sentences: [s("次の日。"), s("朝が来た。"), s("鳥が鳴いた。")], startIndex: 2 },
+  {
+    sentences: [s("次の日。"), s("朝が来た。"), s("鳥が鳴いた。")],
+    startIndex: 2,
+  },
   { sentences: [s("終わり。")], startIndex: 5 },
 ];
 
@@ -57,30 +60,23 @@ describe("flatToParagraphPos", () => {
 });
 
 describe("paragraphDistance", () => {
-  it("viewPositionと同じ段落は距離0", () => {
-    expect(paragraphDistance(sampleParagraphs, 1, 3)).toBe(0);
+  it("同じ段落は距離0", () => {
+    expect(paragraphDistance(1, 1)).toBe(0);
   });
 
-  it("viewPositionより1つ前の段落は距離1", () => {
-    expect(paragraphDistance(sampleParagraphs, 0, 2)).toBe(1);
+  it("1つ離れた段落は距離1", () => {
+    expect(paragraphDistance(1, 0)).toBe(1);
   });
 
-  it("viewPositionより2つ前の段落は距離2", () => {
-    expect(paragraphDistance(sampleParagraphs, 0, 5)).toBe(2);
+  it("2つ離れた段落は距離2", () => {
+    expect(paragraphDistance(2, 0)).toBe(2);
   });
 
   it("距離3以上は3にクランプ", () => {
-    const manyParagraphs: Paragraph[] = [
-      { sentences: [s("a。")], startIndex: 0 },
-      { sentences: [s("b。")], startIndex: 1 },
-      { sentences: [s("c。")], startIndex: 2 },
-      { sentences: [s("d。")], startIndex: 3 },
-      { sentences: [s("e。")], startIndex: 4 },
-    ];
-    expect(paragraphDistance(manyParagraphs, 0, 4)).toBe(3);
+    expect(paragraphDistance(4, 0)).toBe(3);
   });
 
-  it("viewPositionより後の段落は距離0", () => {
-    expect(paragraphDistance(sampleParagraphs, 2, 0)).toBe(0);
+  it("後方の段落も距離が計算される（双方向）", () => {
+    expect(paragraphDistance(0, 2)).toBe(2);
   });
 });
