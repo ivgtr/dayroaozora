@@ -1,6 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { BookshelfEntry } from "@/types";
+import { HeartIcon, CheckIcon, CloseIcon } from "@/components/icons";
 import styles from "./BookshelfCard.module.css";
 
 interface BookshelfCardProps {
@@ -17,10 +19,10 @@ const STATUS_LABELS: Record<BookshelfEntry["status"], string> = {
   favorite_completed: "お気に入り・読了",
 };
 
-const STATUS_ICONS: Record<BookshelfEntry["status"], string> = {
-  favorite: "♡",
-  completed: "✓",
-  favorite_completed: "♡✓",
+const STATUS_ICONS: Record<BookshelfEntry["status"], ReactNode> = {
+  favorite: <HeartIcon size="1em" />,
+  completed: <CheckIcon size="1em" />,
+  favorite_completed: <><HeartIcon size="1em" /><CheckIcon size="1em" /></>,
 };
 
 function StatusBadge({ status }: { status: BookshelfEntry["status"] }) {
@@ -90,7 +92,7 @@ export default function BookshelfCard({
               onDelete(entry.workId);
             }}
           >
-            ×
+            <CloseIcon size="0.75em" />
           </button>
           {isFav && (
             <button
@@ -102,7 +104,7 @@ export default function BookshelfCard({
                 onRemoveFavorite(entry.workId);
               }}
             >
-              <span className={styles.unfavIcon}>♡</span>
+              <span className={styles.unfavIcon}><HeartIcon size="0.75em" /></span>
             </button>
           )}
         </div>

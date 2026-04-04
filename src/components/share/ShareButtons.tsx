@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { buildShareText, shareViaWebShareAPI, shareToX, shareToBluesky } from "@/lib/share";
+import { XLogoIcon, BlueskyIcon, ShareIcon } from "@/components/icons";
 import styles from "./ShareButtons.module.css";
 
 interface ShareButtonsProps {
@@ -47,15 +48,15 @@ export default function ShareButtons({
   return (
     <div className={styles.container}>
       {hasWebShare && (
-        <button className={styles.button} type="button" onClick={handleWebShare}>
-          共有
+        <button className={styles.button} type="button" onClick={handleWebShare} aria-label="共有">
+          <ShareIcon size="1em" /> 共有
         </button>
       )}
       <button className={styles.button} type="button" onClick={handleShareToX} aria-label="Xで共有">
-        𝕏
+        <XLogoIcon size="1em" />
       </button>
       <button className={styles.button} type="button" onClick={handleShareToBluesky} aria-label="Blueskyで共有">
-        🦋
+        <BlueskyIcon size="1em" />
       </button>
     </div>
   );

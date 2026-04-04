@@ -60,6 +60,10 @@
   color: var(--color-text-focus);
 }
 
+.inlineIcon {
+  vertical-align: -0.125em;
+}
+
 .license {
   font-size: 0.8125rem;
   line-height: 1.6;

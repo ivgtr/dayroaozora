@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
+import { CloseIcon, HeartIcon, BookOpenIcon } from "@/components/icons";
 import styles from "./InfoModal.module.css";
 
 interface InfoModalProps {
@@ -57,7 +58,7 @@ export default function InfoModal({ open, onClose }: InfoModalProps) {
           aria-label="閉じる"
           onClick={onClose}
         >
-          ✕
+          <CloseIcon size="1em" />
         </button>
       </div>
 
@@ -74,8 +75,8 @@ export default function InfoModal({ open, onClose }: InfoModalProps) {
         <ul className={styles.guideList}>
           <li>タップ（または Space / Enter）で一文ずつ読み進める</li>
           <li>スクロールで過去の文に戻れる</li>
-          <li>♡ ボタンで気に入った作品をお気に入りに追加</li>
-          <li>📚 ボタンで本棚を開く</li>
+          <li><HeartIcon size="0.875em" className={styles.inlineIcon} /> ボタンで気に入った作品をお気に入りに追加</li>
+          <li><BookOpenIcon size="0.875em" className={styles.inlineIcon} /> ボタンで本棚を開く</li>
         </ul>
       </div>
 

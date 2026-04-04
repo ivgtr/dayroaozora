@@ -1,4 +1,5 @@
 import type { StreakData } from "@/types";
+import { FlameIcon } from "@/components/icons";
 import ShareButtons from "@/components/share/ShareButtons";
 import styles from "./CompletionScreen.module.css";
 
@@ -36,7 +37,7 @@ export default function CompletionScreen({
         </div>
 
         {showStreak && (
-          <p className={styles.streak}>🔥 {streak.current}日連続</p>
+          <p className={styles.streak}><FlameIcon size="1em" className={styles.streakIcon} /> {streak.current}日連続</p>
         )}
 
         <ShareButtons

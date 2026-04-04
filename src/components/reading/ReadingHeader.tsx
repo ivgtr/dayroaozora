@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { BookOpenIcon, InfoIcon, HeartIcon, HeartFilledIcon, MoonIcon, ArrowLeftIcon } from "@/components/icons";
 import styles from "./ReadingHeader.module.css";
 
 interface ReadingHeaderProps {
@@ -29,20 +30,20 @@ export default function ReadingHeader({
           aria-label="本棚"
           onClick={() => router.push("/bookshelf")}
         >
-          <span aria-hidden="true">📚</span>
+          <BookOpenIcon />
         </button>
       ) : (
         <button
-          className={`${styles.button} ${styles.buttonFirst}`}
+          className={`${styles.button} ${styles.buttonFirst} ${styles.backButton}`}
           type="button"
           aria-label="本棚に戻る"
           onClick={() => router.push("/bookshelf")}
         >
-          <span aria-hidden="true">← 本棚</span>
+          <ArrowLeftIcon size="0.875em" /> 本棚
         </button>
       )}
       <button className={styles.button} type="button" aria-label="情報" onClick={onInfoOpen}>
-        <span aria-hidden="true">ℹ️</span>
+        <InfoIcon />
       </button>
       {mode === "daily" && (
         <button
@@ -51,13 +52,13 @@ export default function ReadingHeader({
           aria-label={isFavorite ? "お気に入り済み" : "お気に入りに追加"}
           onClick={onFavoriteAdd}
         >
-          <span aria-hidden="true" className={isFavorite ? styles.favoriteActive : undefined}>
-            {isFavorite ? "♥" : "♡"}
+          <span className={isFavorite ? styles.favoriteActive : undefined}>
+            {isFavorite ? <HeartFilledIcon /> : <HeartIcon />}
           </span>
         </button>
       )}
       <button className={styles.button} type="button" aria-label="テーマ切替" onClick={onThemeToggle}>
-        <span aria-hidden="true">🌓</span>
+        <MoonIcon />
       </button>
     </header>
   );
