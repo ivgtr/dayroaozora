@@ -38,21 +38,19 @@
   --bookshelf-edit-btn-size: 1.5rem;
 
   /* Colors — Bookshelf & Completion */
-  --color-muted: #9ca3af;
-  --color-danger: #ef4444;
-  --color-favorite: #e11d48;
+  --color-muted: #6e747b;
+  --color-danger: #dc2626;
+  --color-favorite: #be123c;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #171717;
-    --color-text-focus: #d4d4d4;
-    --color-text-past: #d4d4d4;
-    --color-accent: #9ca3af;
-    --color-muted: #6b7280;
-    --color-danger: #f87171;
-    --color-favorite: #fb7185;
-  }
+[data-theme="dark"] {
+  --color-bg: #171717;
+  --color-text-focus: #d4d4d4;
+  --color-text-past: #d4d4d4;
+  --color-accent: #9ca3af;
+  --color-muted: #8b929e;
+  --color-danger: #f87171;
+  --color-favorite: #fb7185;
 }
 
 @media (prefers-reduced-motion: reduce) {
