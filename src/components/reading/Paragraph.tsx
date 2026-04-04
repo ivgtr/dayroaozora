@@ -1,6 +1,6 @@
-import { forwardRef } from "react";
+import { forwardRef, memo } from "react";
 import type { Sentence, InlineNode } from "@/types";
-import { sliceInlineNodes } from "@/lib/aozora";
+import type { TypewriterController } from "@/hooks/useTypewriter";
 import { renderNodes } from "./renderNodes";
 import TypewriterText from "./TypewriterText";
 import styles from "./Paragraph.module.css";
@@ -10,12 +10,12 @@ interface ParagraphProps {
   paragraphIndex: number;
   visibleCount: number;
   distance: number;
-  typewriterContent?: { displayedChars: number; isAnimating: boolean };
+  typewriterController?: TypewriterController;
 }
 
-const Paragraph = forwardRef<HTMLParagraphElement, ParagraphProps>(
-  function Paragraph(
-    { sentences, paragraphIndex, visibleCount, distance, typewriterContent },
+const Paragraph = memo(
+  forwardRef<HTMLParagraphElement, ParagraphProps>(function Paragraph(
+    { sentences, paragraphIndex, visibleCount, distance, typewriterController },
     ref,
   ) {
     if (visibleCount <= 0) return null;
@@ -23,24 +23,13 @@ const Paragraph = forwardRef<HTMLParagraphElement, ParagraphProps>(
     const dataDistance =
       distance <= 0 ? "0" : distance >= 3 ? "3" : String(distance);
 
-    const confirmedCount = typewriterContent
+    const confirmedCount = typewriterController
       ? visibleCount - 1
       : visibleCount;
 
-    // 確定済み文のノードを連結
     const confirmedNodes: InlineNode[] = [];
     for (let i = 0; i < confirmedCount; i++) {
       confirmedNodes.push(...sentences[i].nodes);
-    }
-
-    // タイプライター対象の文
-    let typewriterNodes: InlineNode[] | null = null;
-    if (typewriterContent && visibleCount > 0) {
-      const twSentence = sentences[visibleCount - 1];
-      typewriterNodes = sliceInlineNodes(
-        twSentence.nodes,
-        typewriterContent.displayedChars,
-      );
     }
 
     return (
@@ -51,15 +40,15 @@ const Paragraph = forwardRef<HTMLParagraphElement, ParagraphProps>(
         data-paragraph-index={paragraphIndex}
       >
         {renderNodes(confirmedNodes)}
-        {typewriterNodes ? (
+        {typewriterController && visibleCount > 0 ? (
           <TypewriterText
-            nodes={typewriterNodes}
-            isAnimating={typewriterContent!.isAnimating}
+            nodes={sentences[visibleCount - 1].nodes}
+            controller={typewriterController}
           />
         ) : null}
       </p>
     );
-  },
+  }),
 );
 
 export default Paragraph;

@@ -4,6 +4,20 @@
   line-height: var(--line-height-body);
 }
 
+.twChar {
+  display: none;
+}
+
+.twChar.twVisible {
+  display: inline;
+}
+
+.emphasis {
+  font-style: normal;
+  text-emphasis-style: sesame;
+  -webkit-text-emphasis-style: sesame;
+}
+
 .cursor::after {
   content: "";
   display: inline-block;

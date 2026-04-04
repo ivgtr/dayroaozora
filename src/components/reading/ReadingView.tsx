@@ -76,10 +76,7 @@ export default function ReadingView({
     skipPersist,
   });
 
-  const currentSentenceText = sentences[progress]?.text ?? "";
-
-  const { displayedChars, isAnimating, skip } = useTypewriter({
-    text: currentSentenceText,
+  const { skip, isAnimatingRef, controller } = useTypewriter({
     isActive: isNewSentence,
   });
 
@@ -187,12 +184,12 @@ export default function ReadingView({
   );
 
   const handleInteraction = useCallback(() => {
-    if (isAnimating) {
+    if (isAnimatingRef.current) {
       skip();
       return;
     }
     handleTap();
-  }, [isAnimating, skip, handleTap]);
+  }, [isAnimatingRef, skip, handleTap]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -233,9 +230,9 @@ export default function ReadingView({
             paragraphIndex={pIdx}
             visibleCount={visibleCount}
             distance={dist}
-            typewriterContent={
-              isActivePara && showTypewriter
-                ? { displayedChars, isAnimating }
+            typewriterController={
+              isActivePara && showTypewriter && controller
+                ? controller
                 : undefined
             }
           />
