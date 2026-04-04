@@ -1,4 +1,5 @@
 import type { WorkResponse } from "@/types";
+import { parseStructured } from "@/lib/aozora";
 
 interface LibroaozoraMetadata {
   id: string;
@@ -29,7 +30,7 @@ export async function fetchWork(workId: number): Promise<WorkResponse> {
 
   const id = padWorkId(workId);
   const metaUrl = new URL(`/v1/works/${id}`, baseUrl);
-  const contentUrl = new URL(`/v1/works/${id}/content?format=plain`, baseUrl);
+  const contentUrl = new URL(`/v1/works/${id}/content?format=raw`, baseUrl);
   const [metaRes, contentRes] = await Promise.all([
     fetch(metaUrl),
     fetch(contentUrl),
@@ -48,12 +49,18 @@ export async function fetchWork(workId: number): Promise<WorkResponse> {
   const meta: LibroaozoraMetadata = await metaRes.json();
   const body: LibroaozoraContent = await contentRes.json();
 
+  const structured = parseStructured(body.content);
+  const charCount = structured.blocks.reduce((sum, b) => {
+    if (b.type === "paragraph") return sum + b.text.length;
+    return sum;
+  }, 0);
+
   return {
     workId,
     title: meta.title,
     author: formatAuthor(meta.authors),
-    content: body.content,
-    charCount: body.content.length,
+    blocks: structured.blocks,
+    charCount,
   };
 }
 

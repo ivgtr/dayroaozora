@@ -6,7 +6,6 @@ import {
   putCacheEntry,
   deleteCacheEntry,
   getAllExpired,
-  getOldestEntry,
   evictOldest,
   getWorkContent,
   prefetchWork,
@@ -15,15 +14,19 @@ import {
 } from "@/lib/content-cache";
 import type { ContentCacheEntry } from "@/lib/content-cache";
 
+const TEST_BLOCKS = JSON.stringify([
+  { type: "paragraph", text: "本文テスト", nodes: [{ type: "text", text: "本文テスト" }] },
+]);
+
 function makeEntry(overrides: Partial<ContentCacheEntry> = {}): ContentCacheEntry {
-  const content = overrides.content ?? "本文テスト";
   return {
     workId: 100,
     title: "テスト作品",
     author: "テスト著者",
-    content,
-    charCount: content.length,
+    blocks: TEST_BLOCKS,
+    charCount: 5,
     lastAccessedAt: Date.now(),
+    version: 2,
     ...overrides,
   };
 }
@@ -49,7 +52,7 @@ describe("IndexedDB wrapper CRUD", () => {
     const result = await getCacheEntry(100);
     expect(result).not.toBeNull();
     expect(result!.workId).toBe(100);
-    expect(result!.content).toBe("本文テスト");
+    expect(result!.blocks).toBe(TEST_BLOCKS);
     expect(result!.title).toBe("テスト作品");
     expect(result!.author).toBe("テスト著者");
   });
@@ -68,23 +71,26 @@ describe("IndexedDB wrapper CRUD", () => {
 
   it("put overwrites existing entry", async () => {
     await putCacheEntry(makeEntry());
-    const updated = makeEntry({ content: "更新後", charCount: 3 });
+    const newBlocks = JSON.stringify([
+      { type: "paragraph", text: "更新後", nodes: [{ type: "text", text: "更新後" }] },
+    ]);
+    const updated = makeEntry({ blocks: newBlocks, charCount: 3 });
     await putCacheEntry(updated);
     const result = await getCacheEntry(100);
-    expect(result!.content).toBe("更新後");
+    expect(result!.blocks).toBe(newBlocks);
   });
 });
 
 describe("Cache entry validation", () => {
-  it("rejects entry with empty content", async () => {
-    const entry = makeEntry({ content: "", charCount: 0 });
+  it("rejects entry with empty blocks", async () => {
+    const entry = makeEntry({ blocks: "", charCount: 0 });
     await putCacheEntry(entry);
     const result = await getCacheEntry(100);
     expect(result).toBeNull();
   });
 
-  it("rejects entry with mismatched charCount", async () => {
-    const entry = makeEntry({ content: "テスト", charCount: 999 });
+  it("rejects entry with wrong version", async () => {
+    const entry = makeEntry({ version: 1 });
     await putCacheEntry(entry);
     const result = await getCacheEntry(100);
     expect(result).toBeNull();
@@ -134,7 +140,7 @@ describe("getWorkContent", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result.workId).toBe(100);
-    expect(result.content).toBe("本文テスト");
+    expect(result.blocks).toEqual(JSON.parse(TEST_BLOCKS));
     expect(result.title).toBe("テスト作品");
   });
 
@@ -150,12 +156,15 @@ describe("getWorkContent", () => {
   });
 
   it("fetches from API on cache miss and stores", async () => {
+    const mockBlocks = [
+      { type: "paragraph", text: "API本文", nodes: [{ type: "text", text: "API本文" }] },
+    ];
     const mockWork = {
       workId: 200,
       title: "API作品",
       author: "API著者",
-      content: "API本文",
-      charCount: 5,
+      blocks: mockBlocks,
+      charCount: 4,
     };
 
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -167,7 +176,7 @@ describe("getWorkContent", () => {
 
     const cached = await getCacheEntry(200);
     expect(cached).not.toBeNull();
-    expect(cached!.content).toBe("API本文");
+    expect(cached!.blocks).toBe(JSON.stringify(mockBlocks));
   });
 
   it("throws on API failure with cache miss", async () => {
@@ -183,13 +192,15 @@ describe("getWorkContent", () => {
 
 describe("prefetchWork", () => {
   it("fetches and stores when not cached", async () => {
-    const content = "明日の本文テスト";
+    const mockBlocks = [
+      { type: "paragraph", text: "明日の本文", nodes: [{ type: "text", text: "明日の本文" }] },
+    ];
     const mockWork = {
       workId: 300,
       title: "明日の作品",
       author: "明日の著者",
-      content,
-      charCount: content.length,
+      blocks: mockBlocks,
+      charCount: 5,
     };
 
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -254,7 +265,7 @@ describe("offline/failure scenarios", () => {
 
     const result = await getWorkContent(500);
     expect(result.workId).toBe(500);
-    expect(result.content).toBe("本文テスト");
+    expect(result.blocks).toEqual(JSON.parse(TEST_BLOCKS));
   });
 
   it("throws when API fails and no cache", async () => {

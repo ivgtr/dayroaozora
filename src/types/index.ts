@@ -8,11 +8,15 @@ export interface TodayResponse {
   tomorrow: DailyWork;
 }
 
+import type { ContentBlock, InlineNode } from "@/lib/aozora/types";
+
+export type { ContentBlock, InlineNode };
+
 export interface WorkResponse {
   workId: number;
   title: string;
   author: string;
-  content: string;
+  blocks: ContentBlock[];
   charCount: number;
 }
 
@@ -30,7 +34,7 @@ export interface TodayState {
   completed: boolean;
 }
 
-export type ReadingPhase = "loading" | "transitioning" | "reading" | "error" | "completed";
+export type ReadingPhase = "loading" | "transitioning" | "reading" | "error";
 
 export type BookshelfStatus = "favorite" | "completed" | "favorite_completed";
 
@@ -52,4 +56,26 @@ export interface StreakData {
   current: number;
   lastDate: string;
   best: number;
+}
+
+export interface Sentence {
+  nodes: InlineNode[];
+  text: string;
+}
+
+export interface Paragraph {
+  sentences: Sentence[];
+  startIndex: number;
+}
+
+export type Theme = "light" | "dark" | "system";
+
+export interface ShareTextParams {
+  title: string;
+  author: string;
+  readingTime: number;
+  tapCount: number;
+  streak: number;
+  isBookshelfReread: boolean;
+  siteUrl: string;
 }

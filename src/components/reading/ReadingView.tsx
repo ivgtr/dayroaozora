@@ -1,16 +1,26 @@
 "use client";
 
 import { useRef, useCallback, useEffect, useMemo } from "react";
-import type { TodayState } from "@/types";
+import type { TodayState, Paragraph as ParagraphData, StreakData } from "@/types";
 import { useReadingState } from "@/hooks/useReadingState";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { useScrollSnap } from "@/hooks/useScrollSnap";
-import Sentence from "./Sentence";
-import TypewriterText from "./TypewriterText";
+import { flatToParagraphPos } from "@/lib/paragraph-index";
+import Paragraph from "./Paragraph";
+import CompletionSection from "./CompletionSection";
 import styles from "./ReadingView.module.css";
 
+interface CompletionInfo {
+  title: string;
+  author: string;
+  readingTime: number;
+  tapCount: number;
+  streak: StreakData | null;
+  isBookshelfReread: boolean;
+}
+
 interface ReadingViewProps {
-  sentences: string[];
+  paragraphs: ParagraphData[];
   initialState: TodayState;
   onProgressChange?: (progress: number) => void;
   onViewPositionChange?: (viewPosition: number) => void;
@@ -18,10 +28,11 @@ interface ReadingViewProps {
   onDateChange?: () => void;
   onComplete?: (tapCount: number) => void;
   skipPersist?: boolean;
+  completionInfo?: CompletionInfo | null;
 }
 
 export default function ReadingView({
-  sentences,
+  paragraphs,
   initialState,
   onProgressChange,
   onViewPositionChange,
@@ -29,13 +40,25 @@ export default function ReadingView({
   onDateChange,
   onComplete,
   skipPersist = false,
+  completionInfo = null,
 }: ReadingViewProps) {
-  const sentenceElsRef = useRef<Map<number, HTMLParagraphElement>>(new Map());
-  const scrollToSentenceRef = useRef<(index: number) => void>(() => {});
+  const paragraphElsRef = useRef<Map<number, HTMLElement>>(new Map());
+  const scrollToParagraphRef = useRef<(index: number) => void>(() => {});
   const resumeHandledRef = useRef(false);
+  const paragraphsRef = useRef(paragraphs);
+  const completionScrolledRef = useRef(false);
 
-  const handleViewPositionChange = useCallback((index: number) => {
-    scrollToSentenceRef.current(index);
+  useEffect(() => {
+    paragraphsRef.current = paragraphs;
+  }, [paragraphs]);
+
+  const sentences = useMemo(
+    () => paragraphs.flatMap((p) => p.sentences),
+    [paragraphs],
+  );
+
+  const handleViewPositionChange = useCallback((_flatIndex: number) => {
+    // スクロールは useEffect で描画後に実行するため、ここでは何もしない
   }, []);
 
   const {
@@ -53,32 +76,71 @@ export default function ReadingView({
     skipPersist,
   });
 
-  const { displayedText, isAnimating, skip } = useTypewriter({
-    text: sentences[progress] ?? "",
+  const { skip, isAnimatingRef, controller } = useTypewriter({
     isActive: isNewSentence,
   });
 
-  const announcedText = useMemo(() => {
-    if (isNewSentence && isAnimating) {
-      return "";
-    }
-    if (isNewSentence) {
-      return sentences[progress] ?? "";
-    }
-    return sentences[viewPosition] ?? "";
-  }, [isNewSentence, isAnimating, sentences, progress, viewPosition]);
+  const announcedText = useMemo(
+    () => sentences[isNewSentence ? progress : viewPosition]?.text ?? "",
+    [isNewSentence, sentences, progress, viewPosition],
+  );
 
-  const { scrollToSentence } = useScrollSnap({
-    sentenceRefs: sentenceElsRef,
-    totalVisible: progress + 1,
-    onSnap: setViewPosition,
+  const progressParaPos = useMemo(
+    () => flatToParagraphPos(paragraphs, progress),
+    [paragraphs, progress],
+  );
+
+  const visibleParagraphCount = useMemo(
+    () => paragraphs.filter((p) => p.startIndex <= progress).length,
+    [paragraphs, progress],
+  );
+
+  const totalVisible = completionInfo
+    ? visibleParagraphCount + 1
+    : visibleParagraphCount;
+
+  const completionIndex = visibleParagraphCount;
+
+  const initialFocusIndex = useMemo(
+    () => flatToParagraphPos(paragraphs, initialState.viewPosition).paragraphIndex,
+    [paragraphs, initialState.viewPosition],
+  );
+
+  const handleSnap = useCallback(
+    (paraIndex: number) => {
+      const para = paragraphsRef.current[paraIndex];
+      if (!para) return;
+      const lastInPara = para.startIndex + para.sentences.length - 1;
+      setViewPosition(lastInPara);
+    },
+    [setViewPosition],
+  );
+
+  const { scrollToSentence: scrollToParagraph, focusIndex } = useScrollSnap({
+    sentenceRefs: paragraphElsRef,
+    totalVisible,
+    onSnap: handleSnap,
     onUserScroll: skip,
     enabled: true,
+    initialFocusIndex,
   });
 
   useEffect(() => {
-    scrollToSentenceRef.current = scrollToSentence;
-  }, [scrollToSentence]);
+    scrollToParagraphRef.current = scrollToParagraph;
+  }, [scrollToParagraph]);
+
+  // 新規文章追加時のみ自動スクロール
+  const prevProgressRef = useRef(initialState.progress);
+  useEffect(() => {
+    if (progress > prevProgressRef.current) {
+      const { paragraphIndex } = flatToParagraphPos(
+        paragraphsRef.current,
+        progress,
+      );
+      scrollToParagraphRef.current(paragraphIndex);
+    }
+    prevProgressRef.current = progress;
+  }, [progress]);
 
   useEffect(() => {
     onProgressChange?.(progress);
@@ -91,63 +153,104 @@ export default function ReadingView({
   useEffect(() => {
     if (isResuming && !resumeHandledRef.current) {
       resumeHandledRef.current = true;
-      scrollToSentence(initialState.viewPosition);
+      const { paragraphIndex } = flatToParagraphPos(
+        paragraphs,
+        initialState.viewPosition,
+      );
+      scrollToParagraph(paragraphIndex);
     }
-  }, [isResuming, scrollToSentence, initialState.viewPosition]);
+  }, [isResuming, scrollToParagraph, paragraphs, initialState.viewPosition]);
 
-  const setSentenceRef = useCallback(
-    (index: number) => (el: HTMLParagraphElement | null) => {
+  useEffect(() => {
+    if (!completionInfo) {
+      completionScrolledRef.current = false;
+      return;
+    }
+    if (!completionScrolledRef.current && paragraphElsRef.current.has(completionIndex)) {
+      completionScrolledRef.current = true;
+      scrollToParagraphRef.current(completionIndex);
+    }
+  }, [completionInfo, completionIndex]);
+
+  const setParagraphRef = useCallback(
+    (paraIndex: number) => (el: HTMLElement | null) => {
       if (el) {
-        sentenceElsRef.current.set(index, el);
+        paragraphElsRef.current.set(paraIndex, el);
       } else {
-        sentenceElsRef.current.delete(index);
+        paragraphElsRef.current.delete(paraIndex);
       }
     },
     [],
   );
 
+  const handleInteraction = useCallback(() => {
+    if (isAnimatingRef.current) {
+      skip();
+      return;
+    }
+    handleTap();
+  }, [isAnimatingRef, skip, handleTap]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
-        handleTap();
+        handleInteraction();
       }
     },
-    [handleTap],
+    [handleInteraction],
   );
+
+  const showTypewriter = isNewSentence;
 
   return (
     <div
       className={styles.container}
       tabIndex={0}
       role="application"
-      onClick={handleTap}
+      onClick={handleInteraction}
       onKeyDown={handleKeyDown}
     >
       <div className={styles.srOnly} aria-live="polite">
         {announcedText}
       </div>
-      {sentences.slice(0, progress + 1).map((text, index) => {
-        const showTypewriter =
-          index === progress && isNewSentence && isAnimating;
+      {paragraphs.slice(0, visibleParagraphCount).map((para, pIdx) => {
+        const visibleCount = Math.min(
+          progress - para.startIndex + 1,
+          para.sentences.length,
+        );
+        const isActivePara = pIdx === progressParaPos.paragraphIndex;
+        const dist = Math.min(Math.abs(focusIndex - pIdx), 3);
+
         return (
-          <Sentence
-            key={index}
-            ref={setSentenceRef(index)}
-            text={text}
-            index={index}
-            viewPosition={viewPosition}
-            progress={progress}
-          >
-            {showTypewriter ? (
-              <TypewriterText
-                displayedText={displayedText}
-                isAnimating={isAnimating}
-              />
-            ) : undefined}
-          </Sentence>
+          <Paragraph
+            key={para.startIndex}
+            ref={setParagraphRef(pIdx)}
+            sentences={para.sentences}
+            paragraphIndex={pIdx}
+            visibleCount={visibleCount}
+            distance={dist}
+            typewriterController={
+              isActivePara && showTypewriter && controller
+                ? controller
+                : undefined
+            }
+          />
         );
       })}
+      {!completionInfo && <div className={styles.readingSpacer} />}
+      {completionInfo && (
+        <CompletionSection
+          ref={setParagraphRef(completionIndex)}
+          paragraphIndex={completionIndex}
+          title={completionInfo.title}
+          author={completionInfo.author}
+          readingTime={completionInfo.readingTime}
+          tapCount={completionInfo.tapCount}
+          streak={completionInfo.streak}
+          isBookshelfReread={completionInfo.isBookshelfReread}
+        />
+      )}
     </div>
   );
 }

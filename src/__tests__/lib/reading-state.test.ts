@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/daily-work", () => ({
+vi.mock("@/lib/date-utils", () => ({
   formatJstDate: vi.fn(() => "2026-04-04"),
 }));
 
@@ -11,7 +11,7 @@ import {
   createInitialState,
 } from "@/lib/reading-state";
 import type { TodayState } from "@/types";
-import { formatJstDate } from "@/lib/daily-work";
+import { formatJstDate } from "@/lib/date-utils";
 
 describe("reading-state", () => {
   beforeEach(() => {

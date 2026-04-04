@@ -1,44 +1,52 @@
+import type { Paragraph, Sentence, ContentBlock } from "@/types";
+import { splitNodesAtPeriod, textFromNodes } from "@/lib/aozora";
+
 /**
- * 青空文庫の本文テキストを文単位に分割する。
+ * ContentBlock[] を Paragraph[] に変換する。
  *
- * アルゴリズム:
- * 1. 改行コードを LF に正規化
- * 2. 連続空行で段落に分割
- * 3. 段落ごとに「。」があれば句点分割、なければ改行分割
- * 4. 各文をトリムし、空文字列を除去
+ * - paragraph ブロック + 句点あり → splitNodesAtPeriod で文分割 → 1 Paragraph
+ * - paragraph ブロック + 句点なし → 1文1段落
+ * - heading ブロック → 1文1段落
+ * - separator → スキップ
  */
-export function parseSentences(content: string): string[] {
-  // 1. Normalize line endings
-  const normalized = content.replace(/\r\n/g, "\n");
+export function blocksToParagraphs(blocks: ContentBlock[]): Paragraph[] {
+  const result: Paragraph[] = [];
+  let flatIndex = 0;
 
-  // 2. Split by paragraphs (consecutive empty lines)
-  const paragraphs = normalized.split(/\n{2,}/);
+  for (const block of blocks) {
+    if (block.type === "separator") {
+      continue;
+    }
 
-  const sentences: string[] = [];
+    if (block.type === "heading") {
+      const sentence: Sentence = {
+        nodes: [{ type: "text", text: block.text }],
+        text: block.text,
+      };
+      result.push({ sentences: [sentence], startIndex: flatIndex });
+      flatIndex += 1;
+      continue;
+    }
 
-  for (const paragraph of paragraphs) {
-    // 3a. Period splitting takes priority
-    if (paragraph.includes("。")) {
-      const parts = paragraph.split("。");
-      for (let i = 0; i < parts.length; i++) {
-        // Re-attach 。 to all parts except the last (which follows the final 。)
-        const text = i < parts.length - 1 ? parts[i] + "。" : parts[i];
-        const trimmed = text.trim();
-        if (trimmed) {
-          sentences.push(trimmed);
-        }
+    // paragraph block
+    if (block.text.includes("。")) {
+      const sentences = splitNodesAtPeriod(block.nodes).map((s) => ({
+        nodes: s.nodes,
+        text: s.text,
+      }));
+      if (sentences.length > 0) {
+        result.push({ sentences, startIndex: flatIndex });
+        flatIndex += sentences.length;
       }
     } else {
-      // 3b. Newline splitting (poetry / haiku)
-      const lines = paragraph.split("\n");
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed) {
-          sentences.push(trimmed);
-        }
+      const text = textFromNodes(block.nodes);
+      if (text.trim()) {
+        const sentence: Sentence = { nodes: block.nodes, text };
+        result.push({ sentences: [sentence], startIndex: flatIndex });
+        flatIndex += 1;
       }
     }
   }
 
-  return sentences;
+  return result;
 }

@@ -1,12 +1,15 @@
-import type { WorkResponse } from "@/types";
+import type { WorkResponse, ContentBlock } from "@/types";
+
+const CACHE_VERSION = 2;
 
 export interface ContentCacheEntry {
   workId: number;
   title: string;
   author: string;
-  content: string;
+  blocks: string; // JSON.stringify(ContentBlock[])
   charCount: number;
   lastAccessedAt: number;
+  version: number;
 }
 
 const DB_NAME = "dayroaozora";
@@ -52,8 +55,9 @@ async function getDB(): Promise<IDBDatabase | null> {
 
 function isValidEntry(entry: ContentCacheEntry): boolean {
   return (
-    entry.content !== "" &&
-    entry.charCount === entry.content.length
+    entry.version === CACHE_VERSION &&
+    typeof entry.blocks === "string" &&
+    entry.blocks !== ""
   );
 }
 
@@ -204,7 +208,7 @@ export async function getWorkContent(
       workId: cached.workId,
       title: cached.title,
       author: cached.author,
-      content: cached.content,
+      blocks: JSON.parse(cached.blocks) as ContentBlock[],
       charCount: cached.charCount,
     };
   }
@@ -217,9 +221,10 @@ export async function getWorkContent(
     workId: work.workId,
     title: work.title,
     author: work.author,
-    content: work.content,
+    blocks: JSON.stringify(work.blocks),
     charCount: work.charCount,
     lastAccessedAt: Date.now(),
+    version: CACHE_VERSION,
   };
 
   try {
@@ -262,9 +267,10 @@ export async function prefetchWork(workId: number): Promise<void> {
       workId: work.workId,
       title: work.title,
       author: work.author,
-      content: work.content,
+      blocks: JSON.stringify(work.blocks),
       charCount: work.charCount,
       lastAccessedAt: Date.now(),
+      version: CACHE_VERSION,
     };
 
     await putCacheEntry(entry);

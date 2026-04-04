@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import type { TodayState, ReadingPhase, BookshelfEntry } from "@/types";
-import { parseSentences } from "@/lib/sentence-parser";
+import type { TodayState, ReadingPhase, BookshelfEntry, Paragraph } from "@/types";
+import { blocksToParagraphs } from "@/lib/sentence-parser";
 import { loadTodayState, createInitialState } from "@/lib/reading-state";
 import {
   addCompleted,
@@ -15,11 +15,13 @@ import {
 import { formatJstDate } from "@/lib/date-utils";
 import { getWorkContent, cleanupExpiredCache, prefetchWork } from "@/lib/content-cache";
 import { useStreak } from "@/hooks/useStreak";
+import { useTheme } from "@/hooks/useTheme";
 import ReadingView from "./ReadingView";
 import ReadingHeader from "./ReadingHeader";
 import ProgressFooter from "./ProgressFooter";
-import CompletionScreen from "./CompletionScreen";
+import ErrorScreen from "./ErrorScreen";
 import LoadingScreen from "./LoadingScreen";
+import InfoModal from "@/components/InfoModal";
 import styles from "./ReadingClient.module.css";
 
 const MIN_LOADING_MS = 800;
@@ -42,7 +44,7 @@ export default function ReadingClient() {
   const isBookshelfReread = bookshelfWorkId !== null && !Number.isNaN(bookshelfWorkId) && bookshelfWorkId > 0;
 
   const [phase, setPhase] = useState<ReadingPhase>("loading");
-  const [sentences, setSentences] = useState<string[]>([]);
+  const [paragraphs, setParagraphs] = useState<Paragraph[]>([]);
   const [todayState, setTodayState] = useState<TodayState | null>(null);
   const [workData, setWorkData] = useState<WorkData | null>(null);
   const [progress, setProgress] = useState(0);
@@ -51,7 +53,13 @@ export default function ReadingClient() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [bookshelfEntryStatus, setBookshelfEntryStatus] = useState<BookshelfEntry["status"] | null>(null);
   const [completionData, setCompletionData] = useState<{ readingTime: number; tapCount: number } | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const sentences = useMemo(
+    () => paragraphs.flatMap((p) => p.sentences),
+    [paragraphs],
+  );
   const { streak, updateStreak } = useStreak();
+  const { theme, toggleTheme } = useTheme();
   const progressRef = useRef(0);
   const viewPositionRef = useRef(0);
 
@@ -61,11 +69,14 @@ export default function ReadingClient() {
 
       const saved = loadTodayState();
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
       const [todayJson] = await Promise.all([
-        fetch("/api/today").then((res) => {
+        fetch("/api/today", { signal: controller.signal }).then((res) => {
           if (!res.ok) throw new Error("Failed to fetch today's work");
           return res.json();
-        }),
+        }).finally(() => clearTimeout(timeoutId)),
         delay(MIN_LOADING_MS),
       ]);
 
@@ -75,8 +86,8 @@ export default function ReadingClient() {
 
       prefetchWork(todayJson.tomorrow.workId).catch(() => {});
 
-      const parsed = parseSentences(work.content);
-      setSentences(parsed);
+      const parsed = blocksToParagraphs(work.blocks);
+      setParagraphs(parsed);
       setWorkData({
         title: work.title,
         author: work.author,
@@ -100,8 +111,6 @@ export default function ReadingClient() {
           readingTime: entry?.readingTime ?? 0,
           tapCount: entry?.tapCount ?? 0,
         });
-        setPhase("completed");
-        return;
       }
 
       setPhase("transitioning");
@@ -125,8 +134,8 @@ export default function ReadingClient() {
         delay(MIN_LOADING_MS),
       ]);
 
-      const parsed = parseSentences(work.content);
-      setSentences(parsed);
+      const parsed = blocksToParagraphs(work.blocks);
+      setParagraphs(parsed);
       setWorkData({
         title: work.title,
         author: work.author,
@@ -221,7 +230,7 @@ export default function ReadingClient() {
     if (sentences.length === 0) return 0;
     return sentences
       .slice(progress + 1)
-      .reduce((sum, s) => sum + s.length, 0);
+      .reduce((sum, s) => sum + s.text.length, 0);
   }, [sentences, progress]);
 
   const handleProgressChange = useCallback((p: number) => {
@@ -244,9 +253,12 @@ export default function ReadingClient() {
     loadDailyData();
   }, [isBookshelfReread, loadDailyData]);
 
+  const handleInfoOpen = useCallback(() => setInfoOpen(true), []);
+  const handleInfoClose = useCallback(() => setInfoOpen(false), []);
+
   const handleFavoriteAdd = useCallback(() => {
     if (!todayState || isFavorite) return;
-    const firstLine = sentences[0] ?? "";
+    const firstLine = sentences[0]?.text ?? "";
     addFavorite(todayState.workId, firstLine, progress, viewPosition);
     setIsFavorite(true);
   }, [todayState, isFavorite, sentences, progress, viewPosition]);
@@ -255,7 +267,7 @@ export default function ReadingClient() {
     if (!todayState || !workData) return;
 
     const readingTime = Date.now() - new Date(todayState.startedAt).getTime();
-    const firstLine = sentences[0] ?? "";
+    const firstLine = sentences[0]?.text ?? "";
 
     addCompleted(
       todayState.workId,
@@ -271,8 +283,6 @@ export default function ReadingClient() {
     if (!isBookshelfReread) {
       updateStreak(formatJstDate(new Date()));
     }
-
-    setPhase("completed");
   }, [todayState, workData, sentences, updateStreak, isBookshelfReread]);
 
   if (phase === "loading" || phase === "transitioning") {
@@ -298,28 +308,7 @@ export default function ReadingClient() {
 
   if (phase === "error") {
     return (
-      <div className={styles.error}>
-        <p>読み込みに失敗しました</p>
-        <button
-          className={styles.retryButton}
-          onClick={isBookshelfReread ? loadBookshelfData : loadDailyData}
-        >
-          再試行
-        </button>
-      </div>
-    );
-  }
-
-  if (phase === "completed" && workData && completionData) {
-    return (
-      <CompletionScreen
-        title={workData.title}
-        author={workData.author}
-        readingTime={completionData.readingTime}
-        tapCount={completionData.tapCount}
-        streak={isBookshelfReread ? null : streak}
-        isBookshelfReread={isBookshelfReread}
-      />
+      <ErrorScreen onRetry={isBookshelfReread ? loadBookshelfData : loadDailyData} />
     );
   }
 
@@ -330,9 +319,13 @@ export default function ReadingClient() {
           mode={isBookshelfReread ? "bookshelf" : "daily"}
           isFavorite={isFavorite}
           onFavoriteAdd={handleFavoriteAdd}
+          theme={theme}
+          onThemeToggle={toggleTheme}
+          onInfoOpen={handleInfoOpen}
         />
+        <InfoModal open={infoOpen} onClose={handleInfoClose} />
         <ReadingView
-          sentences={sentences}
+          paragraphs={paragraphs}
           initialState={todayState}
           onProgressChange={handleProgressChange}
           onViewPositionChange={handleViewPositionChange}
@@ -340,13 +333,27 @@ export default function ReadingClient() {
           onDateChange={handleDateChange}
           onComplete={handleComplete}
           skipPersist={isBookshelfReread}
+          completionInfo={
+            completionData
+              ? {
+                  title: workData.title,
+                  author: workData.author,
+                  readingTime: completionData.readingTime,
+                  tapCount: completionData.tapCount,
+                  streak: isBookshelfReread ? null : streak,
+                  isBookshelfReread,
+                }
+              : null
+          }
         />
-        <ProgressFooter
-          progress={progress}
-          totalSentences={sentences.length}
-          remainingChars={remainingChars}
-          viewPosition={viewPosition}
-        />
+        {!completionData && (
+          <ProgressFooter
+            progress={progress}
+            totalSentences={sentences.length}
+            remainingChars={remainingChars}
+            viewPosition={viewPosition}
+          />
+        )}
       </>
     );
   }
