@@ -4,8 +4,8 @@
   line-height: var(--line-height-body);
   color: var(--color-text-focus);
   transition: var(--transition-focus);
+  width: 100%;
   max-width: var(--max-width-body);
-  margin: 0 auto;
   padding: 0.5em 1rem;
 }
 
