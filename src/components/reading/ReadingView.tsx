@@ -59,14 +59,11 @@ export default function ReadingView({
   });
 
   const announcedText = useMemo(() => {
-    if (isNewSentence && isAnimating) {
-      return "";
-    }
     if (isNewSentence) {
       return sentences[progress] ?? "";
     }
     return sentences[viewPosition] ?? "";
-  }, [isNewSentence, isAnimating, sentences, progress, viewPosition]);
+  }, [isNewSentence, sentences, progress, viewPosition]);
 
   const { scrollToSentence } = useScrollSnap({
     sentenceRefs: sentenceElsRef,
