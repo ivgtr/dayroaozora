@@ -1,0 +1,31 @@
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.5rem 1rem;
+  background-color: var(--color-bg);
+  z-index: 5;
+}
+
+.progressTrack {
+  height: 2px;
+  background-color: var(--color-accent);
+  opacity: 0.2;
+  border-radius: 1px;
+}
+
+.progressBar {
+  height: 2px;
+  background-color: var(--color-accent);
+  border-radius: 1px;
+  transition: var(--transition-progress);
+}
+
+.time {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  color: var(--color-accent);
+  text-align: right;
+  margin-top: 0.25rem;
+}
