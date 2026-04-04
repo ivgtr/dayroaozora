@@ -1,5 +1,5 @@
 import type { TodayState } from "@/types";
-import { formatJstDate } from "@/lib/daily-work";
+import { formatJstDate } from "@/lib/date-utils";
 
 const STORAGE_KEY = "dayro:today";
 

@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { TodayState } from "@/types";
 import { saveTodayState } from "@/lib/reading-state";
-import { formatJstDate } from "@/lib/daily-work";
+import { formatJstDate } from "@/lib/date-utils";
 
 interface UseReadingStateOptions {
   initialState: TodayState;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getTodayWork, getSecondsUntilJstMidnight } from "@/lib/daily-work";
+import { getTodayWork } from "@/lib/daily-work";
+import { getSecondsUntilJstMidnight } from "@/lib/date-utils";
 
 export async function GET() {
   try {

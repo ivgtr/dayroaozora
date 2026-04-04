@@ -12,7 +12,7 @@ import {
   loadBookshelf,
   updateReadingPosition,
 } from "@/lib/bookshelf";
-import { formatJstDate } from "@/lib/daily-work";
+import { formatJstDate } from "@/lib/date-utils";
 import { useStreak } from "@/hooks/useStreak";
 import ReadingView from "./ReadingView";
 import ReadingHeader from "./ReadingHeader";
