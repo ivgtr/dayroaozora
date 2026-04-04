@@ -33,6 +33,8 @@ export function useReadingState({
   const [isNewSentence, setIsNewSentence] = useState(false);
 
   const handleTap = useCallback(() => {
+    if (state.completed) return;
+
     // Reset pulse flag so React detects the false→true transition
     setIsNewSentence(false);
 

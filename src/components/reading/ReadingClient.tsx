@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import type { TodayState, ReadingPhase, BookshelfEntry } from "@/types";
-import { parseSentences } from "@/lib/sentence-parser";
+import type { TodayState, ReadingPhase, BookshelfEntry, Paragraph } from "@/types";
+import { blocksToParagraphs } from "@/lib/sentence-parser";
 import { loadTodayState, createInitialState } from "@/lib/reading-state";
 import {
   addCompleted,
@@ -19,7 +19,6 @@ import { useTheme } from "@/hooks/useTheme";
 import ReadingView from "./ReadingView";
 import ReadingHeader from "./ReadingHeader";
 import ProgressFooter from "./ProgressFooter";
-import CompletionScreen from "./CompletionScreen";
 import ErrorScreen from "./ErrorScreen";
 import LoadingScreen from "./LoadingScreen";
 import InfoModal from "@/components/InfoModal";
@@ -45,7 +44,7 @@ export default function ReadingClient() {
   const isBookshelfReread = bookshelfWorkId !== null && !Number.isNaN(bookshelfWorkId) && bookshelfWorkId > 0;
 
   const [phase, setPhase] = useState<ReadingPhase>("loading");
-  const [sentences, setSentences] = useState<string[]>([]);
+  const [paragraphs, setParagraphs] = useState<Paragraph[]>([]);
   const [todayState, setTodayState] = useState<TodayState | null>(null);
   const [workData, setWorkData] = useState<WorkData | null>(null);
   const [progress, setProgress] = useState(0);
@@ -55,6 +54,10 @@ export default function ReadingClient() {
   const [bookshelfEntryStatus, setBookshelfEntryStatus] = useState<BookshelfEntry["status"] | null>(null);
   const [completionData, setCompletionData] = useState<{ readingTime: number; tapCount: number } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const sentences = useMemo(
+    () => paragraphs.flatMap((p) => p.sentences),
+    [paragraphs],
+  );
   const { streak, updateStreak } = useStreak();
   const { theme, toggleTheme } = useTheme();
   const progressRef = useRef(0);
@@ -83,8 +86,8 @@ export default function ReadingClient() {
 
       prefetchWork(todayJson.tomorrow.workId).catch(() => {});
 
-      const parsed = parseSentences(work.content);
-      setSentences(parsed);
+      const parsed = blocksToParagraphs(work.blocks);
+      setParagraphs(parsed);
       setWorkData({
         title: work.title,
         author: work.author,
@@ -108,8 +111,6 @@ export default function ReadingClient() {
           readingTime: entry?.readingTime ?? 0,
           tapCount: entry?.tapCount ?? 0,
         });
-        setPhase("completed");
-        return;
       }
 
       setPhase("transitioning");
@@ -133,8 +134,8 @@ export default function ReadingClient() {
         delay(MIN_LOADING_MS),
       ]);
 
-      const parsed = parseSentences(work.content);
-      setSentences(parsed);
+      const parsed = blocksToParagraphs(work.blocks);
+      setParagraphs(parsed);
       setWorkData({
         title: work.title,
         author: work.author,
@@ -229,7 +230,7 @@ export default function ReadingClient() {
     if (sentences.length === 0) return 0;
     return sentences
       .slice(progress + 1)
-      .reduce((sum, s) => sum + s.length, 0);
+      .reduce((sum, s) => sum + s.text.length, 0);
   }, [sentences, progress]);
 
   const handleProgressChange = useCallback((p: number) => {
@@ -257,7 +258,7 @@ export default function ReadingClient() {
 
   const handleFavoriteAdd = useCallback(() => {
     if (!todayState || isFavorite) return;
-    const firstLine = sentences[0] ?? "";
+    const firstLine = sentences[0]?.text ?? "";
     addFavorite(todayState.workId, firstLine, progress, viewPosition);
     setIsFavorite(true);
   }, [todayState, isFavorite, sentences, progress, viewPosition]);
@@ -266,7 +267,7 @@ export default function ReadingClient() {
     if (!todayState || !workData) return;
 
     const readingTime = Date.now() - new Date(todayState.startedAt).getTime();
-    const firstLine = sentences[0] ?? "";
+    const firstLine = sentences[0]?.text ?? "";
 
     addCompleted(
       todayState.workId,
@@ -282,8 +283,6 @@ export default function ReadingClient() {
     if (!isBookshelfReread) {
       updateStreak(formatJstDate(new Date()));
     }
-
-    setPhase("completed");
   }, [todayState, workData, sentences, updateStreak, isBookshelfReread]);
 
   if (phase === "loading" || phase === "transitioning") {
@@ -313,19 +312,6 @@ export default function ReadingClient() {
     );
   }
 
-  if (phase === "completed" && workData && completionData) {
-    return (
-      <CompletionScreen
-        title={workData.title}
-        author={workData.author}
-        readingTime={completionData.readingTime}
-        tapCount={completionData.tapCount}
-        streak={isBookshelfReread ? null : streak}
-        isBookshelfReread={isBookshelfReread}
-      />
-    );
-  }
-
   if (phase === "reading" && todayState && workData) {
     return (
       <>
@@ -339,7 +325,7 @@ export default function ReadingClient() {
         />
         <InfoModal open={infoOpen} onClose={handleInfoClose} />
         <ReadingView
-          sentences={sentences}
+          paragraphs={paragraphs}
           initialState={todayState}
           onProgressChange={handleProgressChange}
           onViewPositionChange={handleViewPositionChange}
@@ -347,13 +333,27 @@ export default function ReadingClient() {
           onDateChange={handleDateChange}
           onComplete={handleComplete}
           skipPersist={isBookshelfReread}
+          completionInfo={
+            completionData
+              ? {
+                  title: workData.title,
+                  author: workData.author,
+                  readingTime: completionData.readingTime,
+                  tapCount: completionData.tapCount,
+                  streak: isBookshelfReread ? null : streak,
+                  isBookshelfReread,
+                }
+              : null
+          }
         />
-        <ProgressFooter
-          progress={progress}
-          totalSentences={sentences.length}
-          remainingChars={remainingChars}
-          viewPosition={viewPosition}
-        />
+        {!completionData && (
+          <ProgressFooter
+            progress={progress}
+            totalSentences={sentences.length}
+            remainingChars={remainingChars}
+            viewPosition={viewPosition}
+          />
+        )}
       </>
     );
   }

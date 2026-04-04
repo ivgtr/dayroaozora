@@ -66,12 +66,11 @@ export function useScrollSnap({
     }, 800);
 
     const behavior = prefersReducedMotion() ? "instant" : "smooth";
-    const block: ScrollLogicalPosition =
-      el.getBoundingClientRect().height > window.innerHeight
-        ? "start"
-        : "center";
+    const rect = el.getBoundingClientRect();
 
-    el.scrollIntoView({ behavior, block });
+    // 要素の下端がビューポートの上寄り（40%）に来るように
+    const targetY = window.scrollY + rect.bottom - window.innerHeight * 0.4;
+    window.scrollTo({ top: Math.max(0, targetY), behavior });
   }, [sentenceRefs]);
 
   // IntersectionObserver setup
@@ -91,7 +90,7 @@ export function useScrollSnap({
       (entries) => {
         for (const entry of entries) {
           const index = Number(
-            (entry.target as HTMLElement).dataset.sentenceIndex,
+            (entry.target as HTMLElement).dataset.paragraphIndex,
           );
           if (!Number.isNaN(index)) {
             visibilityMap.current.set(index, entry.intersectionRatio);

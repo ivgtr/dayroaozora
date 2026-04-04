@@ -9,6 +9,7 @@ interface UseTypewriterOptions {
 
 interface UseTypewriterReturn {
   displayedText: string;
+  displayedChars: number;
   isAnimating: boolean;
   skip: () => void;
 }
@@ -126,6 +127,7 @@ export function useTypewriter({
   if (!isActive) {
     return {
       displayedText: text,
+      displayedChars: text.length,
       isAnimating: false,
       skip: noop,
     };
@@ -136,6 +138,7 @@ export function useTypewriter({
   if (!isAnimating && displayedChars !== text.length) {
     return {
       displayedText: "",
+      displayedChars: 0,
       isAnimating: false,
       skip,
     };
@@ -143,6 +146,7 @@ export function useTypewriter({
 
   return {
     displayedText: text.slice(0, displayedChars),
+    displayedChars,
     isAnimating,
     skip,
   };

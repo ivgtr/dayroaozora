@@ -1,17 +1,19 @@
+import type { InlineNode } from "@/types";
+import { renderNodes } from "./renderNodes";
 import styles from "./TypewriterText.module.css";
 
 interface TypewriterTextProps {
-  displayedText: string;
+  nodes: InlineNode[];
   isAnimating: boolean;
 }
 
 export default function TypewriterText({
-  displayedText,
+  nodes,
   isAnimating,
 }: TypewriterTextProps) {
   return (
     <span className={styles.text}>
-      {displayedText}
+      {renderNodes(nodes)}
       {isAnimating && <span className={styles.cursor} />}
     </span>
   );
