@@ -31,9 +31,10 @@ export async function fetchWork(workId: number): Promise<WorkResponse> {
   const id = padWorkId(workId);
   const metaUrl = new URL(`/v1/works/${id}`, baseUrl);
   const contentUrl = new URL(`/v1/works/${id}/content?format=raw`, baseUrl);
+  const signal = AbortSignal.timeout(30_000);
   const [metaRes, contentRes] = await Promise.all([
-    fetch(metaUrl),
-    fetch(contentUrl),
+    fetch(metaUrl, { signal }),
+    fetch(contentUrl, { signal }),
   ]);
 
   if (metaRes.status === 404 || contentRes.status === 404) {

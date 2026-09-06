@@ -196,10 +196,42 @@ export async function evictOldest(): Promise<boolean> {
   return true;
 }
 
-export async function getWorkContent(
-  workId: number,
-): Promise<WorkResponse> {
+class PrefetchDisabledError extends Error {}
+
+const inFlight = new Map<number, Promise<WorkResponse>>();
+let prefetchDate = "";
+const prefetchedIds = new Set<number>();
+
+export function getWorkContent(workId: number): Promise<WorkResponse> {
+  return sharedWorkContent(workId, false).catch(error => {
+    if (error instanceof PrefetchDisabledError) return sharedWorkContent(workId, false);
+    throw error;
+  });
+}
+
+function sharedWorkContent(workId: number, prefetch: boolean): Promise<WorkResponse> {
+  const pending = inFlight.get(workId);
+  if (pending) return pending;
+  const controller = new AbortController();
+  let available: WorkResponse | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const task = Promise.race([
+    loadWorkContent(workId, prefetch, controller.signal, work => { available = work; }),
+    new Promise<WorkResponse>((resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        if (available) resolve(available);
+        else reject(new Error("Content loading timed out"));
+      }, 40_000);
+    }),
+  ]).finally(() => { clearTimeout(timer); inFlight.delete(workId); });
+  inFlight.set(workId, task);
+  return task;
+}
+
+async function loadWorkContent(workId: number, prefetch: boolean, signal: AbortSignal, acquired: (work: WorkResponse) => void): Promise<WorkResponse> {
   const cached = await getCacheEntry(workId);
+  signal.throwIfAborted();
 
   if (cached) {
     putCacheEntry({ ...cached, lastAccessedAt: Date.now() }).catch(() => {});
@@ -213,9 +245,12 @@ export async function getWorkContent(
     };
   }
 
-  const res = await fetch(`/api/works/${workId}`);
-  if (!res.ok) throw new Error("Failed to fetch work content");
+  const res = await fetch(`/api/works/${workId}${prefetch ? "?prefetch=1" : ""}`, { signal });
+  if (res.status === 204 && prefetch) throw new PrefetchDisabledError();
+  if (!res.ok || res.status === 204) throw new Error("Failed to fetch work content");
   const work: WorkResponse = await res.json();
+  signal.throwIfAborted();
+  acquired(work);
 
   const entry: ContentCacheEntry = {
     workId: work.workId,
@@ -231,7 +266,7 @@ export async function getWorkContent(
     await putCacheEntry(entry);
   } catch (e) {
     if (e instanceof DOMException && e.name === "QuotaExceededError") {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 3 && !signal.aborted; i++) {
         const evicted = await evictOldest();
         if (!evicted) break;
         try {
@@ -254,28 +289,17 @@ export async function getWorkContent(
   return work;
 }
 
-export async function prefetchWork(workId: number): Promise<void> {
+export async function prefetchWork(workId: number, date = new Date().toISOString().slice(0, 10)): Promise<void> {
+  if (prefetchDate !== date) {
+    prefetchDate = date;
+    prefetchedIds.clear();
+  }
+  if (prefetchedIds.has(workId)) return;
+  prefetchedIds.add(workId);
   try {
-    const existing = await getCacheEntry(workId);
-    if (existing) return;
-
-    const res = await fetch(`/api/works/${workId}`);
-    if (!res.ok) return;
-    const work: WorkResponse = await res.json();
-
-    const entry: ContentCacheEntry = {
-      workId: work.workId,
-      title: work.title,
-      author: work.author,
-      blocks: JSON.stringify(work.blocks),
-      charCount: work.charCount,
-      lastAccessedAt: Date.now(),
-      version: CACHE_VERSION,
-    };
-
-    await putCacheEntry(entry);
+    await sharedWorkContent(workId, true);
   } catch {
-    // best-effort: silent failure
+    // One attempt per day/ID, including failure and operational disablement.
   }
 }
 
@@ -307,6 +331,9 @@ export function _resetForTesting(): void {
     cachedDB.close();
     cachedDB = null;
   }
+  inFlight.clear();
+  prefetchedIds.clear();
+  prefetchDate = "";
   dbAvailable = null;
   cleanupDone = false;
 }

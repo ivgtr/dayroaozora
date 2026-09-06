@@ -223,6 +223,15 @@ describe("prefetchWork", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("marks prefetch requests and does not repeat failure on the same day", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+    await prefetchWork(300, "2026-09-06");
+    await prefetchWork(300, "2026-09-06");
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith("/api/works/300?prefetch=1", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    await prefetchWork(300, "2026-09-07");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("fails silently on fetch error", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(
       new Error("Network error"),
@@ -275,4 +284,16 @@ describe("offline/failure scenarios", () => {
 
     await expect(getWorkContent(600)).rejects.toThrow();
   });
+});
+
+it("bounds the complete content load when the network stalls", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("indexedDB", undefined);
+  vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
+  try {
+    const result = getWorkContent(98765);
+    const assertion = expect(result).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(40_000);
+    await assertion;
+  } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
 });

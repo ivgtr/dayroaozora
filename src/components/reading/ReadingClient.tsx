@@ -60,12 +60,14 @@ export default function ReadingClient() {
   );
   const { streak, updateStreak } = useStreak();
   const { theme, toggleTheme } = useTheme();
+  const prefetchRef = useRef<{ workId: number; date: string } | null>(null);
   const progressRef = useRef(0);
   const viewPositionRef = useRef(0);
 
   const loadDailyData = useCallback(async () => {
     try {
       setPhase("loading");
+      prefetchRef.current = null;
 
       const saved = loadTodayState();
 
@@ -84,7 +86,7 @@ export default function ReadingClient() {
 
       const work = await getWorkContent(workId);
 
-      prefetchWork(todayJson.tomorrow.workId).catch(() => {});
+
 
       const parsed = blocksToParagraphs(work.blocks);
       setParagraphs(parsed);
@@ -113,6 +115,9 @@ export default function ReadingClient() {
         });
       }
 
+      prefetchRef.current = todayJson.prefetchEnabled === false ? null : {
+        workId: todayJson.tomorrow.workId, date: todayJson.today.date,
+      };
       setPhase("transitioning");
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -195,6 +200,12 @@ export default function ReadingClient() {
       loadDailyData();
     }
   }, [isBookshelfReread, loadBookshelfData, loadDailyData]);
+
+  useEffect(() => {
+    if (phase !== "reading" || isBookshelfReread || !prefetchRef.current) return;
+    const { workId, date } = prefetchRef.current;
+    prefetchWork(workId, date).catch(() => {});
+  }, [phase, isBookshelfReread]);
 
   // Save reading position for favorite entries on beforeunload
   useEffect(() => {

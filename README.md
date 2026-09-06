@@ -19,3 +19,6 @@
 ## License
 
 MIT
+
+公式取得移行の横断記録は [libroaozoraのリリース資料](https://github.com/ivgtr/libroaozora/blob/codex/official-origin-fetch/docs/investigations/official-origin-release.md) を参照してください。
+保存障害の継続時はサーバー設定 `PREFETCH_ENABLED=false` で翌日先読みを停止できます。通常閲覧は継続し、先読み要求は中継で204/no-storeを返します。本文読込み全体の期限は40秒です。

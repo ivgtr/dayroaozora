@@ -9,6 +9,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Invalid work ID" }, { status: 400 });
   }
 
+  if (_request.nextUrl.searchParams.get("prefetch") === "1" && process.env.PREFETCH_ENABLED === "false") {
+    return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }
+
   try {
     const data = await fetchWork(workId);
 
@@ -22,6 +26,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "Work not found" }, { status: 404 });
     }
 
+    console.error("Failed to fetch work data", { workId, error });
     return NextResponse.json({ error: "Failed to fetch work data" }, { status: 502 });
   }
 }

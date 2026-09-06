@@ -4,6 +4,7 @@ export interface DailyWork {
 }
 
 export interface TodayResponse {
+  prefetchEnabled?: boolean;
   today: DailyWork;
   tomorrow: DailyWork;
 }
