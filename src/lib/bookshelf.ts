@@ -13,7 +13,7 @@ export function loadBookshelf(): BookshelfEntry[] {
 }
 
 export function saveBookshelf(entries: BookshelfEntry[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); } catch { /* Keep the current reading session available. */ }
 }
 
 export function addFavorite(
@@ -21,6 +21,7 @@ export function addFavorite(
   firstLine: string,
   progress: number,
   viewPosition: number,
+  readingContentId?: string,
 ): BookshelfEntry[] {
   const entries = loadBookshelf();
   const existing = entries.find((e) => e.workId === workId);
@@ -36,6 +37,7 @@ export function addFavorite(
   }
 
   const entry: BookshelfEntry = {
+    ...(readingContentId ? { readingContentId } : {}),
     workId,
     title: null,
     author: null,
@@ -61,6 +63,7 @@ export function addCompleted(
   firstLine: string,
   readingTime: number,
   tapCount: number,
+  readingContentId?: string,
 ): BookshelfEntry[] {
   const entries = loadBookshelf();
   const existing = entries.find((e) => e.workId === workId);
@@ -76,12 +79,14 @@ export function addCompleted(
     existing.tapCount = tapCount;
     existing.lastProgress = null;
     existing.lastViewPosition = null;
+    if (readingContentId) existing.readingContentId = readingContentId;
     // firstLine: preserve existing value on re-completion
     saveBookshelf(entries);
     return entries;
   }
 
   const entry: BookshelfEntry = {
+    ...(readingContentId ? { readingContentId } : {}),
     workId,
     title,
     author,
@@ -144,6 +149,7 @@ export function updateReadingPosition(
   workId: number,
   progress: number,
   viewPosition: number,
+  readingContentId?: string,
 ): BookshelfEntry[] {
   const entries = loadBookshelf();
   const existing = entries.find((e) => e.workId === workId);
@@ -151,8 +157,20 @@ export function updateReadingPosition(
   if (existing && existing.status === "favorite") {
     existing.lastProgress = progress;
     existing.lastViewPosition = viewPosition;
+    if (readingContentId) existing.readingContentId = readingContentId;
     saveBookshelf(entries);
   }
 
   return entries;
+}
+
+export function reconcileBookshelfPosition(workId: number, readingContentId?: string): { entry?: BookshelfEntry; reset: boolean } {
+  const entries = loadBookshelf();
+  const entry = entries.find(value => value.workId === workId);
+  if (!entry || readingContentId === undefined || entry.readingContentId === readingContentId) return { entry, reset: false };
+  if (entry.lastProgress !== null) entry.lastProgress = 0;
+  if (entry.lastViewPosition !== null) entry.lastViewPosition = 0;
+  entry.readingContentId = readingContentId;
+  saveBookshelf(entries);
+  return { entry, reset: true };
 }

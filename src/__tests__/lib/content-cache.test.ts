@@ -26,7 +26,10 @@ function makeEntry(overrides: Partial<ContentCacheEntry> = {}): ContentCacheEntr
     blocks: TEST_BLOCKS,
     charCount: 5,
     lastAccessedAt: Date.now(),
-    version: 2,
+    version: 3,
+    checkedAt: Date.now(),
+    readingContentId: "original:structure-v1",
+    delivery: { metadataGeneration: "g", metadataSyncedAt: null, metadataState: "current", sourceRevision: "a".repeat(64), expectedSourceRevision: "a".repeat(64), contentId: "original", verification: "current", validatedAt: new Date().toISOString() },
     ...overrides,
   };
 }
@@ -381,3 +384,93 @@ it.each([false, true])("keeps the original deadline after a delayed prefetch 204
 function prefetchTestWork() {
   return { workId: 100, title: "本文", author: "著者", blocks: JSON.parse(TEST_BLOCKS), charCount: 5 };
 }
+function apiWork(checkedAt: number, verification: "current" | "stale" | "unverified" = "current") {
+  const entry = makeEntry();
+  return { workId: 100, title: "新版", author: "著者", blocks: JSON.parse(TEST_BLOCKS), charCount: 5, readingContentId: "new:structure-v1", delivery: { ...entry.delivery!, contentId: "new", verification, validatedAt: verification === "current" ? new Date(checkedAt).toISOString() : null } };
+}
+it("migrates legacy v2 as unverified, retaining offline reading", async () => {
+  await putCacheEntry(makeEntry({ version: 2, checkedAt: undefined, delivery: undefined, readingContentId: undefined }));
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  const fetchMock = vi.spyOn(globalThis, "fetch");
+  expect((await getWorkContent(100)).title).toBe("テスト作品");
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect((await getCacheEntry(100))?.checkedAt).toBeUndefined();
+  vi.restoreAllMocks();
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(apiWork(Date.now())));
+  expect((await getWorkContent(100)).title).toBe("新版");
+  expect((await getCacheEntry(100))?.version).toBe(3);
+});
+it("does not extend the check interval on daily access and revalidates at 24 hours", async () => {
+  const start = Date.now();
+  await putCacheEntry(makeEntry({ checkedAt: start, delivery: { ...makeEntry().delivery!, validatedAt: new Date(start).toISOString() } }));
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(start + 24 * 60 * 60 * 1000 - 1);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(apiWork(start)));
+    await getWorkContent(100);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await getCacheEntry(100))?.checkedAt).toBe(start);
+    vi.setSystemTime(Date.now() + 1);
+    await getWorkContent(100);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect((await getCacheEntry(100))?.checkedAt).toBe(start); // Old CDN timestamp is preserved.
+  } finally { vi.useRealTimers(); }
+});
+it.each(["stale", "unverified"] as const)("does not confirm %s responses", async verification => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(apiWork(Date.now(), verification)));
+  await getWorkContent(100);
+  expect((await getCacheEntry(100))?.checkedAt).toBeUndefined();
+});
+it("uses normal saved content on temporary failure without advancing checkedAt", async () => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ error: "down", code: "SOURCE_TEMPORARY_ERROR", retryable: true }, { status: 502 }));
+  expect((await getWorkContent(100)).title).toBe("テスト作品");
+  expect((await getCacheEntry(100))?.checkedAt).toBe(0);
+});
+it.each(["NOT_FOUND", "FORBIDDEN", "SOURCE_UNAVAILABLE", "SOURCE_INVALID_CONTENT"])("invalidates saved text after %s, including a subsequent offline open", async code => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code, retryable: false }, { status: 502 }));
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", code);
+  expect(await getCacheEntry(100)).toBeNull();
+  _resetForTesting(); // Persisted stop marker survives a module reload.
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", "SOURCE_UNAVAILABLE");
+});
+it("does not report an aborted IDB transaction as a successful write", async () => {
+  const original = IDBObjectStore.prototype.put;
+  vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args: Parameters<typeof original>) {
+    const request = original.apply(this, args);
+    request.addEventListener("success", () => this.transaction.abort());
+    return request;
+  });
+  await expect(putCacheEntry(makeEntry())).rejects.toThrow();
+  expect(await getCacheEntry(100)).toBeNull();
+});
+
+it("composes daily publication, a 60-second pointer delay and a one-hour CDN response with the browser's 24-hour check interval", async () => {
+  const start = Date.parse("2026-09-06T00:00:00Z");
+  const day = 24 * 60 * 60 * 1000;
+  const pointerCheckedBeforePublication = start + day - 1000;
+  // The source changes just after the first daily sync. A CDN object is filled
+  // during the last second of the old pointer's 60-second validity.
+  const cdnFilled = start + day + 58_000;
+  const cdnExpires = cdnFilled + 60 * 60 * 1000;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(start);
+    await putCacheEntry(makeEntry({ checkedAt: start, delivery: { ...makeEntry().delivery!, validatedAt: new Date(start).toISOString() } }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(Date.now() < cdnExpires
+      ? { ...apiWork(pointerCheckedBeforePublication), title: "CDNに残る旧版" }
+      : { ...apiWork(Date.now()), title: "公開済みの訂正版" }));
+    vi.setSystemTime(cdnFilled);
+    expect((await getWorkContent(100)).title).toBe("CDNに残る旧版");
+    expect((await getCacheEntry(100))?.checkedAt).toBe(pointerCheckedBeforePublication);
+    vi.setSystemTime(cdnExpires);
+    expect((await getWorkContent(100)).title).toBe("CDNに残る旧版");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    vi.setSystemTime(pointerCheckedBeforePublication + day);
+    expect((await getWorkContent(100)).title).toBe("公開済みの訂正版");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
+});

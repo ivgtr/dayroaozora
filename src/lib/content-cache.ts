@@ -1,6 +1,7 @@
-import type { WorkResponse, ContentBlock } from "@/types";
+import type { WorkResponse, ContentBlock, Delivery, WorkErrorCode } from "@/types";
 
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
+export const REVALIDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface ContentCacheEntry {
   workId: number;
@@ -10,6 +11,9 @@ export interface ContentCacheEntry {
   charCount: number;
   lastAccessedAt: number;
   version: number;
+  checkedAt?: number;
+  delivery?: Delivery;
+  readingContentId?: string;
 }
 
 const DB_NAME = "dayroaozora";
@@ -53,12 +57,16 @@ async function getDB(): Promise<IDBDatabase | null> {
   }
 }
 
+function validBlocks(value: unknown): value is ContentBlock[] {
+  return Array.isArray(value) && value.every(block => block && (
+    (block.type === "paragraph" && typeof block.text === "string" && Array.isArray(block.nodes) && block.nodes.every((node: { type?: string }) => node && ["text", "ruby", "emphasis", "bold", "annotation"].includes(node.type ?? ""))) ||
+    (block.type === "heading" && typeof block.text === "string" && Number.isInteger(block.level)) || block.type === "separator"
+  ));
+}
 function isValidEntry(entry: ContentCacheEntry): boolean {
-  return (
-    entry.version === CACHE_VERSION &&
-    typeof entry.blocks === "string" &&
-    entry.blocks !== ""
-  );
+  try {
+    return (entry.version === 2 || entry.version === CACHE_VERSION) && typeof entry.blocks === "string" && validBlocks(JSON.parse(entry.blocks)) && Number.isInteger(entry.workId) && typeof entry.title === "string" && typeof entry.author === "string";
+  } catch { return false; }
 }
 
 export async function getCacheEntry(
@@ -103,7 +111,8 @@ export async function putCacheEntry(
       const store = tx.objectStore(STORE_NAME);
       const request = store.put(entry);
 
-      request.onsuccess = () => resolve();
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error ?? new Error("Cache transaction aborted"));
       request.onerror = () => reject(request.error);
     } catch (e) {
       reject(e);
@@ -121,7 +130,8 @@ export async function deleteCacheEntry(workId: number): Promise<void> {
       const store = tx.objectStore(STORE_NAME);
       const request = store.delete(workId);
 
-      request.onsuccess = () => resolve();
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => resolve();
       request.onerror = () => resolve();
     } catch {
       resolve();
@@ -230,63 +240,89 @@ function sharedWorkContent(workId: number, prefetch: boolean, deadline = Date.no
   return task;
 }
 
-async function loadWorkContent(workId: number, prefetch: boolean, signal: AbortSignal, acquired: (work: WorkResponse) => void): Promise<WorkResponse> {
-  const cached = await getCacheEntry(workId);
+export class ContentRequestError extends Error {
+  constructor(readonly code: WorkErrorCode, readonly retryable: boolean, message = "Failed to fetch work content") { super(message); }
+}
+const stopped = new Set<number>();
+const stopKey = (id: number) => `dayro:content-stopped:${id}`;
+function wasStopped(id: number): boolean {
+  try { return stopped.has(id) || localStorage.getItem(stopKey(id)) === "1"; }
+  catch { return stopped.has(id); }
+}
+async function markStopped(id: number) {
+  stopped.add(id);
+  try { localStorage.setItem(stopKey(id), "1"); } catch { /* IDB deletion remains available. */ }
+  await deleteCacheEntry(id);
+}
+function clearStopped(id: number) {
+  stopped.delete(id);
+  try { localStorage.removeItem(stopKey(id)); } catch { /* Best effort. */ }
+}
+function fromCache(entry: ContentCacheEntry): WorkResponse {
+  return { workId: entry.workId, title: entry.title, author: entry.author, blocks: JSON.parse(entry.blocks), charCount: entry.charCount, delivery: entry.delivery, readingContentId: entry.readingContentId };
+}
+function checkedTime(work: WorkResponse): number | undefined {
+  const delivery = work.delivery;
+  if (delivery?.verification !== "current" || delivery.metadataState !== "current" || !delivery.validatedAt || !delivery.sourceRevision || delivery.sourceRevision !== delivery.expectedSourceRevision) return undefined;
+  const time = Date.parse(delivery.validatedAt);
+  return Number.isFinite(time) && time <= Date.now() ? time : undefined;
+}
+async function loadWorkContent(workId: number, prefetch: boolean, signal: AbortSignal, acquired: (work: WorkResponse | undefined) => void): Promise<WorkResponse> {
+  const blocked = wasStopped(workId);
+  const cached = blocked ? null : await getCacheEntry(workId);
   signal.throwIfAborted();
-
-  if (cached) {
-    putCacheEntry({ ...cached, lastAccessedAt: Date.now() }).catch(() => {});
-
-    return {
-      workId: cached.workId,
-      title: cached.title,
-      author: cached.author,
-      blocks: JSON.parse(cached.blocks) as ContentBlock[],
-      charCount: cached.charCount,
-    };
+  const local = cached ? fromCache(cached) : undefined;
+  acquired(local);
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  if (blocked && offline) throw new ContentRequestError("SOURCE_UNAVAILABLE", false);
+  const fresh = cached?.checkedAt !== undefined && local !== undefined && checkedTime(local) !== undefined && cached.checkedAt <= checkedTime(local)! && cached.checkedAt <= Date.now() && Date.now() - cached.checkedAt < REVALIDATE_INTERVAL_MS;
+  if (local && (prefetch || offline || fresh)) {
+    try { await putCacheEntry({ ...cached!, lastAccessedAt: Date.now() }); } catch { /* Reading is still available. */ }
+    return local;
   }
-
-  const res = await fetch(`/api/works/${workId}${prefetch ? "?prefetch=1" : ""}`, { signal });
-  if (res.status === 204 && prefetch) throw new PrefetchDisabledError();
-  if (!res.ok || res.status === 204) throw new Error("Failed to fetch work content");
-  const work: WorkResponse = await res.json();
-  signal.throwIfAborted();
-  acquired(work);
-
-  const entry: ContentCacheEntry = {
-    workId: work.workId,
-    title: work.title,
-    author: work.author,
-    blocks: JSON.stringify(work.blocks),
-    charCount: work.charCount,
-    lastAccessedAt: Date.now(),
-    version: CACHE_VERSION,
-  };
-
+  let work: WorkResponse;
   try {
-    await putCacheEntry(entry);
-  } catch (e) {
-    if (!prefetch && e instanceof DOMException && e.name === "QuotaExceededError") {
+    const res = await fetch(`/api/works/${workId}${prefetch ? "?prefetch=1" : ""}`, { signal, cache: "no-cache" });
+    if (res.status === 204 && prefetch) throw new PrefetchDisabledError();
+    if (!res.ok) {
+      let body: { code?: WorkErrorCode; retryable?: boolean } = {};
+      try { body = await res.json(); } catch { /* Old errors may have no code. */ }
+      const code = res.status === 404 ? "NOT_FOUND" : body.code ?? "INTERNAL_ERROR";
+      throw new ContentRequestError(code, (code === "SOURCE_TEMPORARY_ERROR" || code === "SERVICE_UNAVAILABLE") && body.retryable === true);
+    }
+    try { work = await res.json(); }
+    catch { throw new ContentRequestError("SOURCE_INVALID_CONTENT", false); }
+    if (!work || work.workId !== workId || !validBlocks(work.blocks) || typeof work.title !== "string" || typeof work.author !== "string" || (work.delivery && (!work.readingContentId || !work.readingContentId.startsWith(`${work.delivery.contentId}:`)))) throw new ContentRequestError("SOURCE_INVALID_CONTENT", false);
+    signal.throwIfAborted();
+  } catch (error) {
+    if (error instanceof ContentRequestError && ["NOT_FOUND", "FORBIDDEN", "SOURCE_UNAVAILABLE", "SOURCE_INVALID_CONTENT"].includes(error.code)) {
+      acquired(undefined);
+      await markStopped(workId);
+      throw error;
+    }
+    if (local && !(error instanceof PrefetchDisabledError) && (!(error instanceof ContentRequestError) || error.retryable)) {
+      try { await putCacheEntry({ ...cached!, lastAccessedAt: Date.now() }); } catch { /* Preserve available text. */ }
+      return local;
+    }
+    throw error;
+  }
+  if (blocked && checkedTime(work) === undefined) { acquired(undefined); throw new ContentRequestError("SOURCE_UNAVAILABLE", false); }
+  acquired(work);
+  clearStopped(workId);
+  const entry: ContentCacheEntry = {
+    workId, title: work.title, author: work.author, blocks: JSON.stringify(work.blocks), charCount: work.charCount,
+    lastAccessedAt: Date.now(), version: CACHE_VERSION,
+    checkedAt: checkedTime(work), delivery: work.delivery, readingContentId: work.readingContentId,
+  };
+  try { await putCacheEntry(entry); }
+  catch (error) {
+    if (!prefetch && error instanceof DOMException && error.name === "QuotaExceededError") {
       for (let i = 0; i < 3 && !signal.aborted; i++) {
-        const evicted = await evictOldest();
-        if (!evicted) break;
-        try {
-          await putCacheEntry(entry);
-          break;
-        } catch (retryErr) {
-          if (
-            !(
-              retryErr instanceof DOMException &&
-              retryErr.name === "QuotaExceededError"
-            )
-          ) {
-            break;
-          }
-        }
+        if (!await evictOldest()) break;
+        try { await putCacheEntry(entry); break; } catch { /* Return fetched content even when saving fails. */ }
       }
     }
   }
-
   return work;
 }
 
@@ -304,6 +340,7 @@ export async function prefetchWork(workId: number, date = new Date().toISOString
     localStorage.setItem(key, date);
   } catch { /* Fall back to per-page suppression when storage is unavailable. */ }
   try {
+    if (await getCacheEntry(workId)) return;
     await sharedWorkContent(workId, true);
   } catch {
     // One attempt per day/ID, including failure and operational disablement.
@@ -338,6 +375,7 @@ export function _resetForTesting(): void {
     cachedDB.close();
     cachedDB = null;
   }
+  stopped.clear();
   inFlight.clear();
   prefetchedIds.clear();
   prefetchDate = "";

@@ -267,3 +267,13 @@ describe("bookshelf", () => {
     });
   });
 });
+
+it.each(["favorite", "completed", "favorite_completed"] as const)("preserves %s history while resetting an incompatible position", async status => {
+  const { reconcileBookshelfPosition, saveBookshelf } = await import("@/lib/bookshelf");
+  const entry = { workId: 999, title: "履歴", author: "著者", firstLine: "本文", status, favoriteAt: "2026-01-01", completedAt: "2026-01-02", readingTime: 10000, tapCount: 99, lastProgress: 50, lastViewPosition: 49, readingContentId: "old" };
+  saveBookshelf([entry]);
+  const result = reconcileBookshelfPosition(999, "new");
+  expect(result.reset).toBe(true);
+  expect(result.entry).toEqual({ ...entry, readingContentId: "new", lastProgress: 0, lastViewPosition: 0 });
+  expect(reconcileBookshelfPosition(999, "new").reset).toBe(false);
+});

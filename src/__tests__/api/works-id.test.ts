@@ -49,7 +49,7 @@ describe("GET /api/works/[id]", () => {
     const response = await GET(createRequest("12345"), createParams("12345"));
     const cacheControl = response.headers.get("Cache-Control");
 
-    expect(cacheControl).toBe("s-maxage=3600, stale-while-revalidate=86400");
+    expect(cacheControl).toBe("s-maxage=3600");
   });
 
   it("disables prefetch at the relay while keeping ordinary reads available", async () => {

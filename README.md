@@ -20,7 +20,9 @@
 
 MIT
 
-公式取得移行の横断記録は [libroaozoraのリリース資料](https://github.com/ivgtr/libroaozora/blob/codex/official-origin-fetch/docs/investigations/official-origin-release.md) を参照してください。
+公式取得移行の横断記録は [libroaozoraのリリース資料](https://github.com/ivgtr/libroaozora/blob/codex/official-origin-versions/docs/investigations/official-origin-cd-release.md) を参照してください。
 保存障害の継続時はサーバー設定 `PREFETCH_ENABLED=false` で翌日先読みを停止できます。通常閲覧は継続し、先読み要求は中継で204/no-storeを返します。本文読込み全体の期限は40秒です。
 
-C中継候補: 本文応答内のwork/deliveryを使用し、旧上流のみdetailで補完します。stale/unverified/errorはno-store。ブラウザ再検証・位置移行と正常CDNのSWR削除はD待ちです。この切り出しの検証は164 tests、lint/type、Next webpack build成功（共有node_modulesがTurbopackのルート外symlink制限に該当するため）。
+本文は開くときに、上流で最後に検証した時刻から24時間を過ぎていれば再検証します。IndexedDBの旧v2を読み、新規保存はv3にします。offline・一時障害で旧本文を表示しても検証日時を更新しません。明示的な提供停止を検知した本文は再利用しません。
+
+本文または構造版が変わった場合、表示開始前に今日・本棚の読書位置だけを先頭へ戻します。お気に入り・読了履歴・累積記録は保持し、読書中の本文は差し替えません。正常本文のCDNは1時間、旧版・未検証・エラーはno-storeです。旧CDNオブジェクトの切替確認はリリース資料に従います。未閲覧・offline端末への即時反映や厳密な訂正反映SLAは保証しません。

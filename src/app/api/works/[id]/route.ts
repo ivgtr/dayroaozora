@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
     return NextResponse.json(data, {
       headers: {
-        "Cache-Control": data.delivery?.verification === "current" ? "s-maxage=3600, stale-while-revalidate=86400" : "no-store",
+        "Cache-Control": data.delivery?.verification === "current" ? "s-maxage=3600" : "no-store",
       },
     });
   } catch (error) {
