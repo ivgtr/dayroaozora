@@ -48,3 +48,39 @@ describe("fetchWork with captured 047927 content", () => {
     await expect(fetchWork(47927)).rejects.toThrow("libroaozora API error (content): 500");
   });
 });
+
+async function currentBody() {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fixture.body.content));
+  const hash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
+  return { ...fixture.body, work: { ...fixture.metadata, title: "同じ世代の題名" }, delivery: {
+    metadataGeneration: "new", metadataSyncedAt: new Date().toISOString(), metadataState: "current",
+    sourceRevision: "a".repeat(64), expectedSourceRevision: "a".repeat(64), contentId: `aozora-decode-v1:${hash}`,
+    verification: "current", validatedAt: new Date().toISOString(),
+  } };
+}
+it("uses a single content response's work and delivery without mixing a detail generation", async () => {
+  vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+  const body = await currentBody();
+  const fetchMock = vi.fn().mockResolvedValue(Response.json(body));
+  vi.stubGlobal("fetch", fetchMock);
+  const result = await fetchWork(47927);
+  expect(result.title).toBe("同じ世代の題名");
+  expect(result.delivery).toEqual(body.delivery);
+  expect(result.readingContentId).toBe(`${body.delivery.contentId}:dayro-structure-v1`);
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+it.each(["identity", "hash", "generation", "missing"])("rejects inconsistent new contracts: %s", async problem => {
+  vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+  const body = await currentBody();
+  if (problem === "identity") body.work.id = "000789";
+  if (problem === "hash") body.content += "changed";
+  if (problem === "generation") Object.assign(body.work, { metadataGeneration: "different" });
+  if (problem === "missing") Object.assign(body, { work: undefined });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
+  await expect(fetchWork(47927)).rejects.toHaveProperty("code", "SOURCE_INVALID_CONTENT");
+});
+it("classifies stable error codes independently of error wording", async () => {
+  vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { code: "SOURCE_TEMPORARY_ERROR", message: "arbitrary wording" } }, { status: 503 })));
+  await expect(fetchWork(47927)).rejects.toMatchObject({ code: "SOURCE_TEMPORARY_ERROR", retryable: true });
+});

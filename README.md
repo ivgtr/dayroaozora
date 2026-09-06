@@ -22,3 +22,5 @@ MIT
 
 公式取得移行の横断記録は [libroaozoraのリリース資料](https://github.com/ivgtr/libroaozora/blob/codex/official-origin-fetch/docs/investigations/official-origin-release.md) を参照してください。
 保存障害の継続時はサーバー設定 `PREFETCH_ENABLED=false` で翌日先読みを停止できます。通常閲覧は継続し、先読み要求は中継で204/no-storeを返します。本文読込み全体の期限は40秒です。
+
+C中継候補: 本文応答内のwork/deliveryを使用し、旧上流のみdetailで補完します。stale/unverified/errorはno-store。ブラウザ再検証・位置移行と正常CDNのSWR削除はD待ちです。この切り出しの検証は164 tests、lint/type、Next webpack build成功（共有node_modulesがTurbopackのルート外symlink制限に該当するため）。

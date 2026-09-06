@@ -6,7 +6,9 @@ vi.mock("@/lib/libroaozora", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/libroaozora")>();
   return {
     WorkNotFoundError: actual.WorkNotFoundError,
+    WorkFetchError: actual.WorkFetchError,
     fetchWork: vi.fn().mockResolvedValue({
+      delivery: { verification: "current" },
       workId: 12345,
       title: "走れメロス",
       author: "太宰治",
@@ -43,7 +45,7 @@ describe("GET /api/works/[id]", () => {
     expect(data.charCount).toBe(9);
   });
 
-  it("sets Cache-Control header with s-maxage and swr", async () => {
+  it("sets a one-hour CDN lifetime without stale-while-revalidate", async () => {
     const response = await GET(createRequest("12345"), createParams("12345"));
     const cacheControl = response.headers.get("Cache-Control");
 
@@ -58,6 +60,14 @@ describe("GET /api/works/[id]", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(fetchWork).not.toHaveBeenCalled();
     expect((await GET(createRequest("12345"), createParams("12345"))).status).toBe(200);
+  });
+
+  it("never shares stale or unverified responses", async () => {
+    const { fetchWork } = await import("@/lib/libroaozora");
+    for (const verification of ["stale", "unverified"] as const) {
+      vi.mocked(fetchWork).mockResolvedValueOnce({ workId: 1, title: "", author: "", blocks: [], charCount: 0, delivery: { metadataGeneration: "g", metadataSyncedAt: null, metadataState: "legacy", sourceRevision: null, expectedSourceRevision: null, contentId: "id", verification, validatedAt: null } });
+      expect((await GET(createRequest("1"), createParams("1"))).headers.get("Cache-Control")).toBe("no-store");
+    }
   });
 
   it("returns 400 for non-numeric ID", async () => {
