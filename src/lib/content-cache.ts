@@ -290,7 +290,8 @@ async function loadWorkContent(workId: number, prefetch: boolean, signal: AbortS
       const code = res.status === 404 ? "NOT_FOUND" : body.code ?? "INTERNAL_ERROR";
       throw new ContentRequestError(code, (code === "SOURCE_TEMPORARY_ERROR" || code === "SERVICE_UNAVAILABLE") && body.retryable === true);
     }
-    try { work = await res.json(); }
+    const responseText = await res.text();
+    try { work = JSON.parse(responseText); }
     catch { throw new ContentRequestError("SOURCE_INVALID_CONTENT", false); }
     if (!work || work.workId !== workId || !validBlocks(work.blocks) || typeof work.title !== "string" || typeof work.author !== "string" || (work.delivery && (!work.readingContentId || !work.readingContentId.startsWith(`${work.delivery.contentId}:`)))) throw new ContentRequestError("SOURCE_INVALID_CONTENT", false);
     signal.throwIfAborted();

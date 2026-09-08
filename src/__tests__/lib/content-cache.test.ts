@@ -424,6 +424,53 @@ it("uses normal saved content on temporary failure without advancing checkedAt",
   expect((await getWorkContent(100)).title).toBe("テスト作品");
   expect((await getCacheEntry(100))?.checkedAt).toBe(0);
 });
+it.each([
+  new TypeError("Body reception failed"),
+  new DOMException("Body reception aborted", "AbortError"),
+])("preserves saved content after body reception fails: %s", async error => {
+  const entry = makeEntry({ checkedAt: 0 });
+  await putCacheEntry(entry);
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"workId":'));
+      controller.error(error);
+    },
+  })));
+
+  expect((await getWorkContent(100)).title).toBe(entry.title);
+  expect(await getCacheEntry(100)).toMatchObject({ blocks: entry.blocks, checkedAt: 0, readingContentId: entry.readingContentId });
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+
+  _resetForTesting();
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  expect((await getWorkContent(100)).title).toBe(entry.title);
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it("allows retry after body reception fails without saved content", async () => {
+  const error = new TypeError("Body reception failed");
+  vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(new Response(new ReadableStream({ start(controller) { controller.error(error); } })))
+    .mockResolvedValueOnce(Response.json(apiWork(Date.now())));
+
+  await expect(getWorkContent(100)).rejects.toBe(error);
+  expect(await getCacheEntry(100)).toBeNull();
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+  expect((await getWorkContent(100)).title).toBe("新版");
+});
+
+it.each(['{"workId":', JSON.stringify({ workId: 100 })])("stops saved content after receiving invalid content: %s", async body => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(body));
+
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", "SOURCE_INVALID_CONTENT");
+  expect(await getCacheEntry(100)).toBeNull();
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBe("1");
+  _resetForTesting();
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", "SOURCE_UNAVAILABLE");
+});
+
 it.each(["NOT_FOUND", "FORBIDDEN", "SOURCE_UNAVAILABLE", "SOURCE_INVALID_CONTENT"])("invalidates saved text after %s, including a subsequent offline open", async code => {
   await putCacheEntry(makeEntry({ checkedAt: 0 }));
   vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code, retryable: false }, { status: 502 }));
