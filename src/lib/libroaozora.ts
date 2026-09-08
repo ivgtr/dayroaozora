@@ -29,13 +29,20 @@ async function checkedFetch(url: URL, signal: AbortSignal, stage: string, workId
   try { response = await fetch(url, { signal, cache: "no-store" }); }
   catch (cause) { throw new WorkFetchError("Upstream network failure", "SOURCE_TEMPORARY_ERROR", true, { cause }); }
   if (response.ok) return response;
-  let code: WorkErrorCode = response.status === 404 ? "NOT_FOUND" : response.status === 403 ? "FORBIDDEN" : response.status === 503 ? "SERVICE_UNAVAILABLE" : "INTERNAL_ERROR";
+  let code: WorkErrorCode = response.status === 404 ? "NOT_FOUND" : response.status === 403 ? "FORBIDDEN" : response.status === 503 ? "SERVICE_UNAVAILABLE" : [429, 502, 504].includes(response.status) ? "SOURCE_TEMPORARY_ERROR" : "INTERNAL_ERROR";
   try {
     const body = await response.json();
     if (codes.includes(body?.error?.code)) code = body.error.code;
   } catch { /* Old upstream may return no JSON error contract. */ }
   if (code === "NOT_FOUND") throw new WorkNotFoundError(workId);
   throw new WorkFetchError(`libroaozora API error (${stage}): ${response.status}`, code, retryableCode(code));
+}
+async function readUpstreamJson<T>(response: Response): Promise<T> {
+  let responseText: string;
+  try { responseText = await response.text(); }
+  catch (cause) { throw new WorkFetchError("Upstream network failure", "SOURCE_TEMPORARY_ERROR", true, { cause }); }
+  try { return JSON.parse(responseText); }
+  catch (cause) { throw new WorkFetchError("Invalid upstream response", "SOURCE_INVALID_CONTENT", false, { cause }); }
 }
 async function rawHash(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -47,12 +54,7 @@ export async function fetchWork(workId: number): Promise<WorkResponse> {
   const id = String(workId).padStart(6, "0");
   const signal = AbortSignal.timeout(30_000);
   const response = await checkedFetch(new URL(`/v1/works/${id}/content?format=raw`, baseUrl), signal, "content", workId);
-  let responseText: string;
-  try { responseText = await response.text(); }
-  catch (cause) { throw new WorkFetchError("Upstream network failure", "SOURCE_TEMPORARY_ERROR", true, { cause }); }
-  let body: LibroaozoraContent;
-  try { body = JSON.parse(responseText); }
-  catch (cause) { throw new WorkFetchError("Invalid upstream response", "SOURCE_INVALID_CONTENT", false, { cause }); }
+  const body = await readUpstreamJson<LibroaozoraContent>(response);
   if (!body || body.workId !== id || body.format !== "raw" || typeof body.content !== "string" || !body.content.trim()) throw new WorkFetchError("Invalid upstream content", "SOURCE_INVALID_CONTENT", false);
   const contentId = `aozora-decode-v1:${await rawHash(body.content)}`;
   let meta: LibroaozoraMetadata;
@@ -68,7 +70,7 @@ export async function fetchWork(workId: number): Promise<WorkResponse> {
     }
   } else {
     const detail = await checkedFetch(new URL(`/v1/works/${id}`, baseUrl), signal, "metadata", workId);
-    meta = await detail.json();
+    meta = await readUpstreamJson<LibroaozoraMetadata>(detail);
     delivery = { metadataGeneration: "legacy", metadataSyncedAt: null, metadataState: "legacy", sourceRevision: null, expectedSourceRevision: null, contentId, verification: "unverified", validatedAt: null };
   }
   if (!meta || meta.id !== id || typeof meta.title !== "string" || !Array.isArray(meta.authors)) throw new WorkFetchError("Invalid upstream work", "SOURCE_INVALID_CONTENT", false);

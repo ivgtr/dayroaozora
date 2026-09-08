@@ -49,37 +49,73 @@ describe("fetchWork with captured 047927 content", () => {
   });
 });
 
-it.each([
-  new TypeError("terminated"),
-  new DOMException("The operation was aborted", "AbortError"),
-  new DOMException("The operation timed out", "TimeoutError"),
-])("treats body reception failure as retryable: %s", async cause => {
-  vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
-  const response = new Response(new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode('{"workId":"047927",'));
-    },
-    pull(controller) {
-      controller.error(cause);
-    },
-  }));
-  const fetchMock = vi.fn().mockResolvedValue(response);
-  vi.stubGlobal("fetch", fetchMock);
-
-  const result = fetchWork(47927);
-  await expect(result).rejects.toBeInstanceOf(WorkFetchError);
-  await expect(result).rejects.toMatchObject({ code: "SOURCE_TEMPORARY_ERROR", retryable: true, cause });
-  expect(fetchMock).toHaveBeenCalledOnce();
-});
-
-it.each(['{"workId":', "", "null", JSON.stringify({ ...fixture.body, content: "" })])(
-  "rejects fully received invalid content without retrying: %s", async content => {
-    vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(content)));
-
-    await expect(fetchWork(47927)).rejects.toMatchObject({ code: "SOURCE_INVALID_CONTENT", retryable: false });
+describe.each(["content", "metadata"])("upstream %s errors", stage => {
+  function mockResponse(response: Response) {
+    const fetchMock = vi.fn().mockResolvedValueOnce(response);
+    if (stage === "metadata") {
+      fetchMock.mockReset().mockResolvedValueOnce(Response.json(fixture.body)).mockResolvedValueOnce(response);
+    }
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
   }
-);
+
+  it.each([
+    new TypeError("terminated"),
+    new DOMException("The operation was aborted", "AbortError"),
+    new DOMException("The operation timed out", "TimeoutError"),
+  ])("treats body reception failure as retryable: %s", async cause => {
+    vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+    const response = new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"workId":"047927",'));
+      },
+      pull(controller) {
+        controller.error(cause);
+      },
+    }));
+    const fetchMock = mockResponse(response);
+
+    const result = fetchWork(47927);
+    await expect(result).rejects.toBeInstanceOf(WorkFetchError);
+    await expect(result).rejects.toMatchObject({ code: "SOURCE_TEMPORARY_ERROR", retryable: true, cause });
+    expect(fetchMock).toHaveBeenCalledTimes(stage === "content" ? 1 : 2);
+  });
+
+  it.each(['{"workId":', "", "null", JSON.stringify({ ...fixture.body, content: "" })])(
+    "rejects fully received invalid content without retrying: %s", async content => {
+      vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+      mockResponse(new Response(content));
+
+      await expect(fetchWork(47927)).rejects.toMatchObject({ code: "SOURCE_INVALID_CONTENT", retryable: false });
+    }
+  );
+
+  it.each([
+    [429, "SOURCE_TEMPORARY_ERROR", true],
+    [502, "SOURCE_TEMPORARY_ERROR", true],
+    [504, "SOURCE_TEMPORARY_ERROR", true],
+    [503, "SERVICE_UNAVAILABLE", true],
+    [404, "NOT_FOUND", false],
+    [403, "FORBIDDEN", false],
+    [500, "INTERNAL_ERROR", false],
+  ] as const)("falls back to the HTTP status %s without a known error contract", async (status, code, retryable) => {
+    vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+    for (const body of ["<html>upstream error</html>", "", "{}", '{"error":{"code":"UNKNOWN"}}']) {
+      mockResponse(new Response(body, { status }));
+      await expect(fetchWork(47927)).rejects.toMatchObject({ code, retryable });
+    }
+  });
+
+  it.each([429, 502, 503, 504])("prioritizes explicit error codes over HTTP %s", async status => {
+    vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+    for (const code of ["SOURCE_UNAVAILABLE", "SOURCE_INVALID_CONTENT", "INTERNAL_ERROR", "NOT_FOUND", "FORBIDDEN", "SOURCE_TEMPORARY_ERROR", "SERVICE_UNAVAILABLE"]) {
+      mockResponse(Response.json({ error: { code } }, { status }));
+      await expect(fetchWork(47927)).rejects.toMatchObject({
+        code, retryable: code === "SOURCE_TEMPORARY_ERROR" || code === "SERVICE_UNAVAILABLE",
+      });
+    }
+  });
+});
 
 async function currentBody() {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fixture.body.content));
