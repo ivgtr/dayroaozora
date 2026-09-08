@@ -1,4 +1,8 @@
-# 公式取得移行のPRと公開条件
+# 公式取得移行のPR作成時の記録
+
+2026-09-06のPR分割時の記録です。以下の公開待ち・認証状態・手順は当時のものです。dayro PR #1〜#3は2026-09-08にマージ済みで、main `7467685` のProduction deployment成功と本番47927の正常本文・delivery伝達を確認しました。上流は引き続きlegacy/unverifiedのため、メタデータ同期と訂正反映全体の本番受入れは残っています。上流の復旧根拠は [libroの本番復旧記録](https://github.com/ivgtr/libroaozora/blob/main/docs/investigations/official-origin-user-agent-2026-09-08.md)を参照してください。
+
+## 当初の計画
 
 この変更はローカル検証済みの候補から作成したレビュー用ブランチです。公開順序は次のとおりです。
 

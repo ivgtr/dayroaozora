@@ -14,4 +14,4 @@ pnpm test:watch   # Vitest (ウォッチモード)
 
 ## References
 
-プロジェクトのドメイン知識・設計判断・要件・アーキテクチャは [.docs/README.md](.docs/README.md) を参照。
+サービスの説明は [README.md](README.md)、公式取得移行の履歴は [docs/pr-delivery.md](docs/pr-delivery.md) を参照。履歴に記載された当時の状態を、現在の公開状態や未完了作業と混同しない。
