@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchWork } from "@/lib/libroaozora";
+import { fetchWork, WorkFetchError } from "@/lib/libroaozora";
 import fixture from "../fixtures/047927.json";
 
 afterEach(() => {
@@ -48,6 +48,38 @@ describe("fetchWork with captured 047927 content", () => {
     await expect(fetchWork(47927)).rejects.toThrow("libroaozora API error (content): 500");
   });
 });
+
+it.each([
+  new TypeError("terminated"),
+  new DOMException("The operation was aborted", "AbortError"),
+  new DOMException("The operation timed out", "TimeoutError"),
+])("treats body reception failure as retryable: %s", async cause => {
+  vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+  const response = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"workId":"047927",'));
+    },
+    pull(controller) {
+      controller.error(cause);
+    },
+  }));
+  const fetchMock = vi.fn().mockResolvedValue(response);
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = fetchWork(47927);
+  await expect(result).rejects.toBeInstanceOf(WorkFetchError);
+  await expect(result).rejects.toMatchObject({ code: "SOURCE_TEMPORARY_ERROR", retryable: true, cause });
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it.each(['{"workId":', "", "null", JSON.stringify({ ...fixture.body, content: "" })])(
+  "rejects fully received invalid content without retrying: %s", async content => {
+    vi.stubEnv("LIBROAOZORA_API_URL", "https://example.test");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(content)));
+
+    await expect(fetchWork(47927)).rejects.toMatchObject({ code: "SOURCE_INVALID_CONTENT", retryable: false });
+  }
+);
 
 async function currentBody() {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fixture.body.content));

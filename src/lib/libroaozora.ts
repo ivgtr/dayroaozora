@@ -47,8 +47,11 @@ export async function fetchWork(workId: number): Promise<WorkResponse> {
   const id = String(workId).padStart(6, "0");
   const signal = AbortSignal.timeout(30_000);
   const response = await checkedFetch(new URL(`/v1/works/${id}/content?format=raw`, baseUrl), signal, "content", workId);
+  let responseText: string;
+  try { responseText = await response.text(); }
+  catch (cause) { throw new WorkFetchError("Upstream network failure", "SOURCE_TEMPORARY_ERROR", true, { cause }); }
   let body: LibroaozoraContent;
-  try { body = await response.json(); }
+  try { body = JSON.parse(responseText); }
   catch (cause) { throw new WorkFetchError("Invalid upstream response", "SOURCE_INVALID_CONTENT", false, { cause }); }
   if (!body || body.workId !== id || body.format !== "raw" || typeof body.content !== "string" || !body.content.trim()) throw new WorkFetchError("Invalid upstream content", "SOURCE_INVALID_CONTENT", false);
   const contentId = `aozora-decode-v1:${await rawHash(body.content)}`;
