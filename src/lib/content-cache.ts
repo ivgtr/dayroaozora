@@ -203,13 +203,14 @@ let prefetchDate = "";
 const prefetchedIds = new Set<number>();
 
 export function getWorkContent(workId: number): Promise<WorkResponse> {
-  return sharedWorkContent(workId, false).catch(error => {
-    if (error instanceof PrefetchDisabledError) return sharedWorkContent(workId, false);
+  const deadline = Date.now() + 40_000;
+  return sharedWorkContent(workId, false, deadline).catch(error => {
+    if (error instanceof PrefetchDisabledError) return sharedWorkContent(workId, false, deadline);
     throw error;
   });
 }
 
-function sharedWorkContent(workId: number, prefetch: boolean): Promise<WorkResponse> {
+function sharedWorkContent(workId: number, prefetch: boolean, deadline = Date.now() + 40_000): Promise<WorkResponse> {
   const pending = inFlight.get(workId);
   if (pending) return pending;
   const controller = new AbortController();
@@ -222,7 +223,7 @@ function sharedWorkContent(workId: number, prefetch: boolean): Promise<WorkRespo
         controller.abort();
         if (available) resolve(available);
         else reject(new Error("Content loading timed out"));
-      }, 40_000);
+      }, Math.max(0, deadline - Date.now()));
     }),
   ]).finally(() => { clearTimeout(timer); inFlight.delete(workId); });
   inFlight.set(workId, task);
@@ -265,7 +266,7 @@ async function loadWorkContent(workId: number, prefetch: boolean, signal: AbortS
   try {
     await putCacheEntry(entry);
   } catch (e) {
-    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+    if (!prefetch && e instanceof DOMException && e.name === "QuotaExceededError") {
       for (let i = 0; i < 3 && !signal.aborted; i++) {
         const evicted = await evictOldest();
         if (!evicted) break;
@@ -296,6 +297,12 @@ export async function prefetchWork(workId: number, date = new Date().toISOString
   }
   if (prefetchedIds.has(workId)) return;
   prefetchedIds.add(workId);
+  try {
+    const key = `dayro:prefetch-attempt:${workId}`;
+    if (localStorage.getItem(key) === date) return;
+    // Record before the first await so reloads also remember failed attempts.
+    localStorage.setItem(key, date);
+  } catch { /* Fall back to per-page suppression when storage is unavailable. */ }
   try {
     await sharedWorkContent(workId, true);
   } catch {

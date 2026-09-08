@@ -41,6 +41,7 @@ function clearIndexedDB(): Promise<void> {
 
 beforeEach(async () => {
   _resetForTesting();
+  localStorage.clear();
   await clearIndexedDB();
   vi.restoreAllMocks();
 });
@@ -191,6 +192,54 @@ describe("getWorkContent", () => {
 });
 
 describe("prefetchWork", () => {
+  it("preserves existing text when prefetch saving exceeds quota", async () => {
+    await putCacheEntry(makeEntry());
+    const put = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+      throw new DOMException("Full", "QuotaExceededError");
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...prefetchTestWork(), workId: 200 }));
+    await prefetchWork(200);
+    expect(put).toHaveBeenCalledOnce();
+    expect(await getCacheEntry(100)).not.toBeNull();
+    expect(await getCacheEntry(200)).toBeNull();
+  });
+
+  it("still evicts for an explicit read when saving exceeds quota", async () => {
+    await putCacheEntry(makeEntry());
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementationOnce(() => {
+      throw new DOMException("Full", "QuotaExceededError");
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...prefetchTestWork(), workId: 200 }));
+    expect((await getWorkContent(200)).workId).toBe(200);
+    expect(await getCacheEntry(100)).toBeNull();
+    expect(await getCacheEntry(200)).not.toBeNull();
+  });
+
+  it("remembers failure across module reloads, permits other IDs and retries next day", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+    await prefetchWork(300, "2026-09-06");
+    _resetForTesting();
+    vi.resetModules();
+    const reloaded = await import("@/lib/content-cache");
+    try {
+      await reloaded.prefetchWork(300, "2026-09-06");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await expect(reloaded.getWorkContent(300)).rejects.toThrow("offline");
+      expect(fetchMock).toHaveBeenLastCalledWith("/api/works/300", expect.anything());
+      await reloaded.prefetchWork(301, "2026-09-06");
+      await reloaded.prefetchWork(300, "2026-09-07");
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally { reloaded._resetForTesting(); }
+  });
+
+  it("suppresses repeated attempts in memory when localStorage is unavailable", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+    await prefetchWork(300, "2026-09-06");
+    await prefetchWork(300, "2026-09-06");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("fetches and stores when not cached", async () => {
     const mockBlocks = [
       { type: "paragraph", text: "明日の本文", nodes: [{ type: "text", text: "明日の本文" }] },
@@ -297,3 +346,38 @@ it("bounds the complete content load when the network stalls", async () => {
     await assertion;
   } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
 });
+
+it.each([false, true])("keeps the original deadline after a delayed prefetch 204 (save stalls: %s)", async saveStalls => {
+  await getCacheEntry(100);
+  vi.useFakeTimers();
+  const store = { get: () => { throw new Error("cache miss"); }, put: () => ({}) };
+  vi.spyOn(IDBDatabase.prototype, "transaction").mockReturnValue({ objectStore: () => store } as unknown as IDBTransaction);
+  let respond!: (response: Response) => void;
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockImplementationOnce(() => new Promise(resolve => { respond = resolve; }))
+    .mockImplementationOnce(() => saveStalls ? Promise.resolve(Response.json(prefetchTestWork())) : new Promise(() => {}));
+  try {
+    const prefetch = prefetchWork(100);
+    await vi.advanceTimersByTimeAsync(0);
+    const reading = getWorkContent(100);
+    let settled = false;
+    void reading.then(() => { settled = true; }, () => { settled = true; });
+    const assertion = saveStalls ? expect(reading).resolves.toHaveProperty("workId", 100) : expect(reading).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(39_000);
+    respond(new Response(null, { status: 204 }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/works/100", expect.anything());
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    await prefetch;
+    expect((fetchMock.mock.calls[1][1]?.signal as AbortSignal).aborted).toBe(true);
+  } finally { vi.useRealTimers(); }
+});
+
+
+function prefetchTestWork() {
+  return { workId: 100, title: "本文", author: "著者", blocks: JSON.parse(TEST_BLOCKS), charCount: 5 };
+}
