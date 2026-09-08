@@ -285,10 +285,12 @@ async function loadWorkContent(workId: number, prefetch: boolean, signal: AbortS
     const res = await fetch(`/api/works/${workId}${prefetch ? "?prefetch=1" : ""}`, { signal, cache: "no-cache" });
     if (res.status === 204 && prefetch) throw new PrefetchDisabledError();
     if (!res.ok) {
-      let body: { code?: WorkErrorCode; retryable?: boolean } = {};
+      let body: { code?: WorkErrorCode; retryable?: boolean } | null = null;
       try { body = await res.json(); } catch { /* Old errors may have no code. */ }
-      const code = res.status === 404 ? "NOT_FOUND" : body.code ?? "INTERNAL_ERROR";
-      throw new ContentRequestError(code, (code === "SOURCE_TEMPORARY_ERROR" || code === "SERVICE_UNAVAILABLE") && body.retryable === true);
+      const codes: WorkErrorCode[] = ["NOT_FOUND", "FORBIDDEN", "SOURCE_UNAVAILABLE", "SOURCE_TEMPORARY_ERROR", "SOURCE_INVALID_CONTENT", "SERVICE_UNAVAILABLE", "INTERNAL_ERROR"];
+      const explicitCode = body?.code && codes.includes(body.code) ? body.code : undefined;
+      const code = explicitCode ?? (res.status === 404 ? "NOT_FOUND" : res.status === 403 ? "FORBIDDEN" : res.status === 503 ? "SERVICE_UNAVAILABLE" : [429, 502, 504].includes(res.status) ? "SOURCE_TEMPORARY_ERROR" : "INTERNAL_ERROR");
+      throw new ContentRequestError(code, (code === "SOURCE_TEMPORARY_ERROR" || code === "SERVICE_UNAVAILABLE") && (explicitCode === undefined || body?.retryable === true));
     }
     const responseText = await res.text();
     try { work = JSON.parse(responseText); }

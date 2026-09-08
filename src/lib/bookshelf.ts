@@ -167,7 +167,7 @@ export function updateReadingPosition(
 export function reconcileBookshelfPosition(workId: number, readingContentId?: string): { entry?: BookshelfEntry; reset: boolean } {
   const entries = loadBookshelf();
   const entry = entries.find(value => value.workId === workId);
-  if (!entry || readingContentId === undefined || entry.readingContentId === readingContentId) return { entry, reset: false };
+  if (!entry || entry.readingContentId === readingContentId) return { entry, reset: false };
   if (entry.lastProgress !== null) entry.lastProgress = 0;
   if (entry.lastViewPosition !== null) entry.lastViewPosition = 0;
   entry.readingContentId = readingContentId;

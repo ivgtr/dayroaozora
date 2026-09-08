@@ -114,10 +114,13 @@ it("resets only the current reading position when text or structure changes", as
   const { reconcileTodayState } = await import("@/lib/reading-state");
   const old = { ...createInitialState(123), progress: 10, viewPosition: 7, tapCount: 99, completed: true, readingContentId: "text:structure-v1" };
   expect(reconcileTodayState(old, old.readingContentId)).toEqual({ state: old, reset: false });
-  for (const id of ["new-text:structure-v1", "text:structure-v2"]) {
+  for (const id of ["new-text:structure-v1", "text:structure-v2", undefined]) {
     const result = reconcileTodayState(old, id);
     expect(result.reset).toBe(true);
     expect(result.state).toMatchObject({ progress: 0, viewPosition: 0, completed: false, readingContentId: id, tapCount: 99, startedAt: old.startedAt });
+    saveTodayState(result.state);
+    expect(loadTodayState()?.readingContentId).toBe(id);
+    expect(loadTodayState()?.progress).toBe(0);
   }
   expect(reconcileTodayState({ ...old, readingContentId: undefined }, undefined).reset).toBe(false);
   expect(reconcileTodayState({ ...old, readingContentId: undefined }, "known").reset).toBe(true);

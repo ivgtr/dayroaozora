@@ -36,7 +36,7 @@ export function createInitialState(workId: number, readingContentId?: string): T
 
 /** Unknown old positions can only be retained while the text is also unidentified. */
 export function reconcileTodayState(state: TodayState, readingContentId?: string): { state: TodayState; reset: boolean } {
-  const reset = readingContentId !== undefined && state.readingContentId !== readingContentId;
+  const reset = state.readingContentId !== readingContentId;
   if (!reset) return { state, reset: false };
   return { state: { ...state, readingContentId, progress: 0, viewPosition: 0, completed: false }, reset: true };
 }

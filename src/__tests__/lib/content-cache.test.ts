@@ -424,6 +424,47 @@ it("uses normal saved content on temporary failure without advancing checkedAt",
   expect((await getWorkContent(100)).title).toBe("テスト作品");
   expect((await getCacheEntry(100))?.checkedAt).toBe(0);
 });
+it.each([429, 502, 503, 504])("falls back to saved text for HTTP %s without a valid error code", async status => {
+  const entry = makeEntry({ checkedAt: 0 });
+  await putCacheEntry(entry);
+  const fetchMock = vi.spyOn(globalThis, "fetch");
+  for (const body of ["<html>Service unavailable</html>", "Gateway timeout", "null", '{"code":"UNKNOWN"}', '{}']) {
+    fetchMock.mockResolvedValueOnce(new Response(body, { status }));
+    expect((await getWorkContent(100)).title).toBe(entry.title);
+    expect(await getCacheEntry(100)).toMatchObject({ blocks: entry.blocks, checkedAt: 0 });
+    expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+  }
+});
+
+it.each([429, 502, 503, 504])("reports HTTP %s as retryable without saved text", async status => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("Unavailable", { status }));
+  await expect(getWorkContent(100)).rejects.toMatchObject({
+    code: status === 503 ? "SERVICE_UNAVAILABLE" : "SOURCE_TEMPORARY_ERROR",
+    retryable: true,
+  });
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+});
+
+it.each(["NOT_FOUND", "FORBIDDEN", "SOURCE_UNAVAILABLE", "SOURCE_INVALID_CONTENT"])("prioritizes explicit %s over a temporary HTTP status", async code => {
+  const fetchMock = vi.spyOn(globalThis, "fetch");
+  for (const status of [429, 502, 503, 504]) {
+    _resetForTesting();
+    localStorage.clear();
+    await putCacheEntry(makeEntry({ checkedAt: 0 }));
+    fetchMock.mockResolvedValueOnce(Response.json({ code, retryable: false }, { status }));
+    await expect(getWorkContent(100)).rejects.toMatchObject({ code, retryable: false });
+    expect(await getCacheEntry(100)).toBeNull();
+    expect(localStorage.getItem("dayro:content-stopped:100")).toBe("1");
+  }
+});
+
+it("preserves an explicit non-retryable error contract on HTTP 502", async () => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: "INTERNAL_ERROR", retryable: false }, { status: 502 }));
+  await expect(getWorkContent(100)).rejects.toMatchObject({ code: "INTERNAL_ERROR", retryable: false });
+  expect(await getCacheEntry(100)).not.toBeNull();
+});
+
 it.each([
   new TypeError("Body reception failed"),
   new DOMException("Body reception aborted", "AbortError"),
