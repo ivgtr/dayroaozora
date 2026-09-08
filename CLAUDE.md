@@ -14,4 +14,4 @@ pnpm test:watch   # Vitest (ウォッチモード)
 
 ## References
 
-サービスの説明は [README.md](README.md)、公式取得移行の履歴は [docs/pr-delivery.md](docs/pr-delivery.md) を参照。履歴に記載された当時の状態を、現在の公開状態や未完了作業と混同しない。
+サービスの説明は [README.md](README.md)、本文取得・キャッシュ・読書位置の設計は [docs/architecture.md](docs/architecture.md) を参照。
