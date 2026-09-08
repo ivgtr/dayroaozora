@@ -200,7 +200,7 @@ describe("prefetchWork", () => {
     const put = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
       throw new DOMException("Full", "QuotaExceededError");
     });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...prefetchTestWork(), workId: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...apiWork(Date.now()), workId: 200 }));
     await prefetchWork(200);
     expect(put).toHaveBeenCalledOnce();
     expect(await getCacheEntry(100)).not.toBeNull();
@@ -212,7 +212,7 @@ describe("prefetchWork", () => {
     vi.spyOn(IDBObjectStore.prototype, "put").mockImplementationOnce(() => {
       throw new DOMException("Full", "QuotaExceededError");
     });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...prefetchTestWork(), workId: 200 }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...apiWork(Date.now()), workId: 200 }));
     expect((await getWorkContent(200)).workId).toBe(200);
     expect(await getCacheEntry(100)).toBeNull();
     expect(await getCacheEntry(200)).not.toBeNull();
@@ -358,7 +358,7 @@ it.each([false, true])("keeps the original deadline after a delayed prefetch 204
   let respond!: (response: Response) => void;
   const fetchMock = vi.spyOn(globalThis, "fetch")
     .mockImplementationOnce(() => new Promise(resolve => { respond = resolve; }))
-    .mockImplementationOnce(() => saveStalls ? Promise.resolve(Response.json(prefetchTestWork())) : new Promise(() => {}));
+    .mockImplementationOnce(() => saveStalls ? Promise.resolve(Response.json(apiWork(Date.now()))) : new Promise(() => {}));
   try {
     const prefetch = prefetchWork(100);
     await vi.advanceTimersByTimeAsync(0);
@@ -380,10 +380,6 @@ it.each([false, true])("keeps the original deadline after a delayed prefetch 204
   } finally { vi.useRealTimers(); }
 });
 
-
-function prefetchTestWork() {
-  return { workId: 100, title: "本文", author: "著者", blocks: JSON.parse(TEST_BLOCKS), charCount: 5 };
-}
 function apiWork(checkedAt: number, verification: "current" | "stale" | "unverified" = "current") {
   const entry = makeEntry();
   return { workId: 100, title: "新版", author: "著者", blocks: JSON.parse(TEST_BLOCKS), charCount: 5, readingContentId: "new:structure-v1", delivery: { ...entry.delivery!, contentId: "new", verification, validatedAt: verification === "current" ? new Date(checkedAt).toISOString() : null } };
