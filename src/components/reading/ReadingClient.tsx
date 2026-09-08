@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import type { TodayState, ReadingPhase, BookshelfEntry, Paragraph } from "@/types";
 import { blocksToParagraphs } from "@/lib/sentence-parser";
-import { loadTodayState, createInitialState } from "@/lib/reading-state";
+import { loadTodayState, createInitialState, reconcileTodayState, saveTodayState } from "@/lib/reading-state";
 import {
   addCompleted,
   addFavorite,
   isFavorite as checkIsFavorite,
   loadBookshelf,
   updateReadingPosition,
+  reconcileBookshelfPosition,
 } from "@/lib/bookshelf";
 import { formatJstDate } from "@/lib/date-utils";
 import { getWorkContent, cleanupExpiredCache, prefetchWork } from "@/lib/content-cache";
@@ -53,6 +54,8 @@ export default function ReadingClient() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [bookshelfEntryStatus, setBookshelfEntryStatus] = useState<BookshelfEntry["status"] | null>(null);
   const [completionData, setCompletionData] = useState<{ readingTime: number; tapCount: number } | null>(null);
+  const [updateNotice, setUpdateNotice] = useState(false);
+  const loadSequence = useRef(0);
   const [infoOpen, setInfoOpen] = useState(false);
   const sentences = useMemo(
     () => paragraphs.flatMap((p) => p.sentences),
@@ -60,12 +63,17 @@ export default function ReadingClient() {
   );
   const { streak, updateStreak } = useStreak();
   const { theme, toggleTheme } = useTheme();
+  const prefetchRef = useRef<{ workId: number; date: string } | null>(null);
   const progressRef = useRef(0);
   const viewPositionRef = useRef(0);
 
   const loadDailyData = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     try {
       setPhase("loading");
+      prefetchRef.current = null;
+      setCompletionData(null);
+      setUpdateNotice(false);
 
       const saved = loadTodayState();
 
@@ -83,8 +91,9 @@ export default function ReadingClient() {
       const workId: number = todayJson.today.workId;
 
       const work = await getWorkContent(workId);
+      if (sequence !== loadSequence.current) return;
 
-      prefetchWork(todayJson.tomorrow.workId).catch(() => {});
+
 
       const parsed = blocksToParagraphs(work.blocks);
       setParagraphs(parsed);
@@ -94,14 +103,18 @@ export default function ReadingClient() {
         charCount: work.charCount,
       });
 
-      const state =
-        saved && saved.workId === workId ? saved : createInitialState(workId);
+      const resumed = saved && saved.workId === workId
+        ? reconcileTodayState(saved, work.readingContentId)
+        : { state: createInitialState(workId, work.readingContentId), reset: false };
+      const state = resumed.state;
+      setUpdateNotice(resumed.reset);
+      if (resumed.reset) saveTodayState(state);
       setTodayState(state);
       setProgress(state.progress);
       setViewPosition(state.viewPosition);
       progressRef.current = state.progress;
       viewPositionRef.current = state.viewPosition;
-      setIsResuming(saved !== null && saved.workId === workId && saved.progress > 0);
+      setIsResuming(state.progress > 0);
       setIsFavorite(checkIsFavorite(loadBookshelf(), workId));
 
       if (state.completed) {
@@ -113,26 +126,33 @@ export default function ReadingClient() {
         });
       }
 
+      prefetchRef.current = todayJson.prefetchEnabled === false ? null : {
+        workId: todayJson.tomorrow.workId, date: todayJson.today.date,
+      };
       setPhase("transitioning");
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         requestAnimationFrame(() => setPhase("reading"));
       }
     } catch {
-      setPhase("error");
+      if (sequence === loadSequence.current) setPhase("error");
     }
   }, []);
 
   const loadBookshelfData = useCallback(async () => {
     if (!bookshelfWorkId) return;
+    const sequence = ++loadSequence.current;
 
     try {
       setPhase("loading");
 
+      setCompletionData(null);
+      setUpdateNotice(false);
       const [work] = await Promise.all([
         getWorkContent(bookshelfWorkId),
         delay(MIN_LOADING_MS),
       ]);
+      if (sequence !== loadSequence.current) return;
 
       const parsed = blocksToParagraphs(work.blocks);
       setParagraphs(parsed);
@@ -142,8 +162,9 @@ export default function ReadingClient() {
         charCount: work.charCount,
       });
 
-      const entries = loadBookshelf();
-      const entry = entries.find((e) => e.workId === bookshelfWorkId);
+      const resumed = reconcileBookshelfPosition(bookshelfWorkId, work.readingContentId);
+      const entry = resumed.entry;
+      setUpdateNotice(resumed.reset);
 
       let initialProgress = 0;
       let initialViewPosition = 0;
@@ -158,6 +179,7 @@ export default function ReadingClient() {
       setBookshelfEntryStatus(entry?.status ?? null);
 
       const state: TodayState = {
+        readingContentId: work.readingContentId,
         date: formatJstDate(new Date()),
         workId: bookshelfWorkId,
         progress: initialProgress,
@@ -180,7 +202,7 @@ export default function ReadingClient() {
         requestAnimationFrame(() => setPhase("reading"));
       }
     } catch {
-      setPhase("error");
+      if (sequence === loadSequence.current) setPhase("error");
     }
   }, [bookshelfWorkId]);
 
@@ -196,17 +218,29 @@ export default function ReadingClient() {
     }
   }, [isBookshelfReread, loadBookshelfData, loadDailyData]);
 
+  useEffect(() => {
+    if (phase !== "reading" || isBookshelfReread || !prefetchRef.current) return;
+    const { workId, date } = prefetchRef.current;
+    prefetchWork(workId, date).catch(() => {});
+  }, [phase, isBookshelfReread]);
+
+  useEffect(() => {
+    if (phase !== "reading" || !updateNotice) return;
+    const timer = setTimeout(() => setUpdateNotice(false), 8000);
+    return () => clearTimeout(timer);
+  }, [phase, updateNotice]);
+
   // Save reading position for favorite entries on beforeunload
   useEffect(() => {
     if (!isBookshelfReread || bookshelfEntryStatus !== "favorite" || !bookshelfWorkId) return;
 
     const handleBeforeUnload = () => {
-      updateReadingPosition(bookshelfWorkId, progressRef.current, viewPositionRef.current);
+      updateReadingPosition(bookshelfWorkId, progressRef.current, viewPositionRef.current, todayState?.readingContentId);
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isBookshelfReread, bookshelfEntryStatus, bookshelfWorkId]);
+  }, [isBookshelfReread, bookshelfEntryStatus, bookshelfWorkId, todayState?.readingContentId]);
 
   const handleTransitionEnd = useCallback(() => {
     setPhase((current) => (current === "transitioning" ? "reading" : current));
@@ -243,9 +277,9 @@ export default function ReadingClient() {
     viewPositionRef.current = vp;
 
     if (isBookshelfReread && bookshelfEntryStatus === "favorite" && bookshelfWorkId) {
-      updateReadingPosition(bookshelfWorkId, progressRef.current, vp);
+      updateReadingPosition(bookshelfWorkId, progressRef.current, vp, todayState?.readingContentId);
     }
-  }, [isBookshelfReread, bookshelfEntryStatus, bookshelfWorkId]);
+  }, [isBookshelfReread, bookshelfEntryStatus, bookshelfWorkId, todayState?.readingContentId]);
 
   const handleDateChange = useCallback(() => {
     if (isBookshelfReread) return;
@@ -259,7 +293,7 @@ export default function ReadingClient() {
   const handleFavoriteAdd = useCallback(() => {
     if (!todayState || isFavorite) return;
     const firstLine = sentences[0]?.text ?? "";
-    addFavorite(todayState.workId, firstLine, progress, viewPosition);
+    addFavorite(todayState.workId, firstLine, progress, viewPosition, todayState.readingContentId);
     setIsFavorite(true);
   }, [todayState, isFavorite, sentences, progress, viewPosition]);
 
@@ -276,6 +310,7 @@ export default function ReadingClient() {
       firstLine,
       readingTime,
       finalTapCount,
+      todayState.readingContentId,
     );
 
     setCompletionData({ readingTime, tapCount: finalTapCount });
@@ -324,7 +359,9 @@ export default function ReadingClient() {
           onInfoOpen={handleInfoOpen}
         />
         <InfoModal open={infoOpen} onClose={handleInfoClose} />
+        {updateNotice && <p role="status" className={styles.updateNotice}>本文に合わせて、先頭から再開します。</p>}
         <ReadingView
+          key={`${todayState.workId}:${todayState.readingContentId ?? "legacy"}`}
           paragraphs={paragraphs}
           initialState={todayState}
           onProgressChange={handleProgressChange}

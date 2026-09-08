@@ -6,7 +6,9 @@ vi.mock("@/lib/libroaozora", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/libroaozora")>();
   return {
     WorkNotFoundError: actual.WorkNotFoundError,
+    WorkFetchError: actual.WorkFetchError,
     fetchWork: vi.fn().mockResolvedValue({
+      delivery: { verification: "current" },
       workId: 12345,
       title: "走れメロス",
       author: "太宰治",
@@ -27,6 +29,7 @@ function createParams(id: string) {
 describe("GET /api/works/[id]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("returns work data for a valid ID", async () => {
@@ -42,11 +45,29 @@ describe("GET /api/works/[id]", () => {
     expect(data.charCount).toBe(9);
   });
 
-  it("sets Cache-Control header with s-maxage and swr", async () => {
+  it("sets a one-hour CDN lifetime without stale-while-revalidate", async () => {
     const response = await GET(createRequest("12345"), createParams("12345"));
     const cacheControl = response.headers.get("Cache-Control");
 
-    expect(cacheControl).toBe("s-maxage=3600, stale-while-revalidate=86400");
+    expect(cacheControl).toBe("s-maxage=3600");
+  });
+
+  it("disables prefetch at the relay while keeping ordinary reads available", async () => {
+    vi.stubEnv("PREFETCH_ENABLED", "false");
+    const { fetchWork } = await import("@/lib/libroaozora");
+    const response = await GET(new NextRequest("http://localhost/api/works/12345?prefetch=1"), createParams("12345"));
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(fetchWork).not.toHaveBeenCalled();
+    expect((await GET(createRequest("12345"), createParams("12345"))).status).toBe(200);
+  });
+
+  it("never shares stale or unverified responses", async () => {
+    const { fetchWork } = await import("@/lib/libroaozora");
+    for (const verification of ["stale", "unverified"] as const) {
+      vi.mocked(fetchWork).mockResolvedValueOnce({ workId: 1, title: "", author: "", blocks: [], charCount: 0, delivery: { metadataGeneration: "g", metadataSyncedAt: null, metadataState: "legacy", sourceRevision: null, expectedSourceRevision: null, contentId: "id", verification, validatedAt: null } });
+      expect((await GET(createRequest("1"), createParams("1"))).headers.get("Cache-Control")).toBe("no-store");
+    }
   });
 
   it("returns 400 for non-numeric ID", async () => {
@@ -86,12 +107,16 @@ describe("GET /api/works/[id]", () => {
 
   it("returns 502 when libroaozora API fails", async () => {
     const { fetchWork } = await import("@/lib/libroaozora");
-    vi.mocked(fetchWork).mockRejectedValueOnce(new Error("libroaozora API error: 503"));
+    const error = new Error("libroaozora API error (content): 500");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetchWork).mockRejectedValueOnce(error);
 
     const response = await GET(createRequest("12345"), createParams("12345"));
     const data = await response.json();
 
     expect(response.status).toBe(502);
     expect(data.error).toBe("Failed to fetch work data");
+    expect(log).toHaveBeenCalledWith("Failed to fetch work data", { workId: 12345, error });
+    log.mockRestore();
   });
 });

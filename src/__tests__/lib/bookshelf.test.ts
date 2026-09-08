@@ -267,3 +267,22 @@ describe("bookshelf", () => {
     });
   });
 });
+
+it.each(["favorite", "completed", "favorite_completed"] as const)("preserves %s history while resetting an incompatible position", async status => {
+  const { reconcileBookshelfPosition, saveBookshelf } = await import("@/lib/bookshelf");
+  const entry = { workId: 999, title: "履歴", author: "著者", firstLine: "本文", status, favoriteAt: "2026-01-01", completedAt: "2026-01-02", readingTime: 10000, tapCount: 99, lastProgress: 50, lastViewPosition: 49, readingContentId: "old" };
+  saveBookshelf([entry]);
+  const result = reconcileBookshelfPosition(999, "new");
+  expect(result.reset).toBe(true);
+  expect(result.entry).toEqual({ ...entry, readingContentId: "new", lastProgress: 0, lastViewPosition: 0 });
+  expect(reconcileBookshelfPosition(999, "new").reset).toBe(false);
+  saveBookshelf([{ ...entry, readingContentId: "new" }]);
+  const legacy = reconcileBookshelfPosition(999, undefined);
+  expect(legacy.reset).toBe(true);
+  expect(legacy.entry).toEqual({ ...entry, readingContentId: undefined, lastProgress: 0, lastViewPosition: 0 });
+  expect(loadBookshelf()[0].readingContentId).toBeUndefined();
+  expect(reconcileBookshelfPosition(999, undefined).reset).toBe(false);
+  saveBookshelf([{ ...entry, readingContentId: undefined }]);
+  expect(reconcileBookshelfPosition(999, undefined)).toMatchObject({ reset: false, entry: { lastProgress: 50, lastViewPosition: 49 } });
+  expect(reconcileBookshelfPosition(999, "known")).toMatchObject({ reset: true, entry: { readingContentId: "known", lastProgress: 0, lastViewPosition: 0 } });
+});

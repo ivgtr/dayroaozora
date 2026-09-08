@@ -8,7 +8,7 @@ export async function GET() {
     const data = await getTodayWork(now);
     const maxAge = getSecondsUntilJstMidnight(now);
 
-    return NextResponse.json(data, {
+    return NextResponse.json({ ...data, prefetchEnabled: process.env.PREFETCH_ENABLED !== "false" }, {
       headers: {
         "Cache-Control": `s-maxage=${maxAge}`,
       },

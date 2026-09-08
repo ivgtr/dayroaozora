@@ -26,7 +26,10 @@ function makeEntry(overrides: Partial<ContentCacheEntry> = {}): ContentCacheEntr
     blocks: TEST_BLOCKS,
     charCount: 5,
     lastAccessedAt: Date.now(),
-    version: 2,
+    version: 3,
+    checkedAt: Date.now(),
+    readingContentId: "original:structure-v1",
+    delivery: { metadataGeneration: "g", metadataSyncedAt: null, metadataState: "current", sourceRevision: "a".repeat(64), expectedSourceRevision: "a".repeat(64), contentId: "original", verification: "current", validatedAt: new Date().toISOString() },
     ...overrides,
   };
 }
@@ -41,6 +44,7 @@ function clearIndexedDB(): Promise<void> {
 
 beforeEach(async () => {
   _resetForTesting();
+  localStorage.clear();
   await clearIndexedDB();
   vi.restoreAllMocks();
 });
@@ -191,6 +195,54 @@ describe("getWorkContent", () => {
 });
 
 describe("prefetchWork", () => {
+  it("preserves existing text when prefetch saving exceeds quota", async () => {
+    await putCacheEntry(makeEntry());
+    const put = vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+      throw new DOMException("Full", "QuotaExceededError");
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...apiWork(Date.now()), workId: 200 }));
+    await prefetchWork(200);
+    expect(put).toHaveBeenCalledOnce();
+    expect(await getCacheEntry(100)).not.toBeNull();
+    expect(await getCacheEntry(200)).toBeNull();
+  });
+
+  it("still evicts for an explicit read when saving exceeds quota", async () => {
+    await putCacheEntry(makeEntry());
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementationOnce(() => {
+      throw new DOMException("Full", "QuotaExceededError");
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ...apiWork(Date.now()), workId: 200 }));
+    expect((await getWorkContent(200)).workId).toBe(200);
+    expect(await getCacheEntry(100)).toBeNull();
+    expect(await getCacheEntry(200)).not.toBeNull();
+  });
+
+  it("remembers failure across module reloads, permits other IDs and retries next day", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+    await prefetchWork(300, "2026-09-06");
+    _resetForTesting();
+    vi.resetModules();
+    const reloaded = await import("@/lib/content-cache");
+    try {
+      await reloaded.prefetchWork(300, "2026-09-06");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await expect(reloaded.getWorkContent(300)).rejects.toThrow("offline");
+      expect(fetchMock).toHaveBeenLastCalledWith("/api/works/300", expect.anything());
+      await reloaded.prefetchWork(301, "2026-09-06");
+      await reloaded.prefetchWork(300, "2026-09-07");
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally { reloaded._resetForTesting(); }
+  });
+
+  it("suppresses repeated attempts in memory when localStorage is unavailable", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+    await prefetchWork(300, "2026-09-06");
+    await prefetchWork(300, "2026-09-06");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("fetches and stores when not cached", async () => {
     const mockBlocks = [
       { type: "paragraph", text: "明日の本文", nodes: [{ type: "text", text: "明日の本文" }] },
@@ -221,6 +273,15 @@ describe("prefetchWork", () => {
     await prefetchWork(300);
 
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("marks prefetch requests and does not repeat failure on the same day", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
+    await prefetchWork(300, "2026-09-06");
+    await prefetchWork(300, "2026-09-06");
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith("/api/works/300?prefetch=1", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    await prefetchWork(300, "2026-09-07");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("fails silently on fetch error", async () => {
@@ -275,4 +336,225 @@ describe("offline/failure scenarios", () => {
 
     await expect(getWorkContent(600)).rejects.toThrow();
   });
+});
+
+it("bounds the complete content load when the network stalls", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("indexedDB", undefined);
+  vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
+  try {
+    const result = getWorkContent(98765);
+    const assertion = expect(result).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(40_000);
+    await assertion;
+  } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
+});
+
+it.each([false, true])("keeps the original deadline after a delayed prefetch 204 (save stalls: %s)", async saveStalls => {
+  await getCacheEntry(100);
+  vi.useFakeTimers();
+  const store = { get: () => { throw new Error("cache miss"); }, put: () => ({}) };
+  vi.spyOn(IDBDatabase.prototype, "transaction").mockReturnValue({ objectStore: () => store } as unknown as IDBTransaction);
+  let respond!: (response: Response) => void;
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockImplementationOnce(() => new Promise(resolve => { respond = resolve; }))
+    .mockImplementationOnce(() => saveStalls ? Promise.resolve(Response.json(apiWork(Date.now()))) : new Promise(() => {}));
+  try {
+    const prefetch = prefetchWork(100);
+    await vi.advanceTimersByTimeAsync(0);
+    const reading = getWorkContent(100);
+    let settled = false;
+    void reading.then(() => { settled = true; }, () => { settled = true; });
+    const assertion = saveStalls ? expect(reading).resolves.toHaveProperty("workId", 100) : expect(reading).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(39_000);
+    respond(new Response(null, { status: 204 }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/works/100", expect.anything());
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    await prefetch;
+    expect((fetchMock.mock.calls[1][1]?.signal as AbortSignal).aborted).toBe(true);
+  } finally { vi.useRealTimers(); }
+});
+
+function apiWork(checkedAt: number, verification: "current" | "stale" | "unverified" = "current") {
+  const entry = makeEntry();
+  return { workId: 100, title: "新版", author: "著者", blocks: JSON.parse(TEST_BLOCKS), charCount: 5, readingContentId: "new:structure-v1", delivery: { ...entry.delivery!, contentId: "new", verification, validatedAt: verification === "current" ? new Date(checkedAt).toISOString() : null } };
+}
+it("migrates legacy v2 as unverified, retaining offline reading", async () => {
+  await putCacheEntry(makeEntry({ version: 2, checkedAt: undefined, delivery: undefined, readingContentId: undefined }));
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  const fetchMock = vi.spyOn(globalThis, "fetch");
+  expect((await getWorkContent(100)).title).toBe("テスト作品");
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect((await getCacheEntry(100))?.checkedAt).toBeUndefined();
+  vi.restoreAllMocks();
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(apiWork(Date.now())));
+  expect((await getWorkContent(100)).title).toBe("新版");
+  expect((await getCacheEntry(100))?.version).toBe(3);
+});
+it("does not extend the check interval on daily access and revalidates at 24 hours", async () => {
+  const start = Date.now();
+  await putCacheEntry(makeEntry({ checkedAt: start, delivery: { ...makeEntry().delivery!, validatedAt: new Date(start).toISOString() } }));
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(start + 24 * 60 * 60 * 1000 - 1);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(apiWork(start)));
+    await getWorkContent(100);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await getCacheEntry(100))?.checkedAt).toBe(start);
+    vi.setSystemTime(Date.now() + 1);
+    await getWorkContent(100);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect((await getCacheEntry(100))?.checkedAt).toBe(start); // Old CDN timestamp is preserved.
+  } finally { vi.useRealTimers(); }
+});
+it.each(["stale", "unverified"] as const)("does not confirm %s responses", async verification => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(apiWork(Date.now(), verification)));
+  await getWorkContent(100);
+  expect((await getCacheEntry(100))?.checkedAt).toBeUndefined();
+});
+it("uses normal saved content on temporary failure without advancing checkedAt", async () => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ error: "down", code: "SOURCE_TEMPORARY_ERROR", retryable: true }, { status: 502 }));
+  expect((await getWorkContent(100)).title).toBe("テスト作品");
+  expect((await getCacheEntry(100))?.checkedAt).toBe(0);
+});
+it.each([429, 502, 503, 504])("falls back to saved text for HTTP %s without a valid error code", async status => {
+  const entry = makeEntry({ checkedAt: 0 });
+  await putCacheEntry(entry);
+  const fetchMock = vi.spyOn(globalThis, "fetch");
+  for (const body of ["<html>Service unavailable</html>", "Gateway timeout", "null", '{"code":"UNKNOWN"}', '{}']) {
+    fetchMock.mockResolvedValueOnce(new Response(body, { status }));
+    expect((await getWorkContent(100)).title).toBe(entry.title);
+    expect(await getCacheEntry(100)).toMatchObject({ blocks: entry.blocks, checkedAt: 0 });
+    expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+  }
+});
+
+it.each([429, 502, 503, 504])("reports HTTP %s as retryable without saved text", async status => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("Unavailable", { status }));
+  await expect(getWorkContent(100)).rejects.toMatchObject({
+    code: status === 503 ? "SERVICE_UNAVAILABLE" : "SOURCE_TEMPORARY_ERROR",
+    retryable: true,
+  });
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+});
+
+it.each(["NOT_FOUND", "FORBIDDEN", "SOURCE_UNAVAILABLE", "SOURCE_INVALID_CONTENT"])("prioritizes explicit %s over a temporary HTTP status", async code => {
+  const fetchMock = vi.spyOn(globalThis, "fetch");
+  for (const status of [429, 502, 503, 504]) {
+    _resetForTesting();
+    localStorage.clear();
+    await putCacheEntry(makeEntry({ checkedAt: 0 }));
+    fetchMock.mockResolvedValueOnce(Response.json({ code, retryable: false }, { status }));
+    await expect(getWorkContent(100)).rejects.toMatchObject({ code, retryable: false });
+    expect(await getCacheEntry(100)).toBeNull();
+    expect(localStorage.getItem("dayro:content-stopped:100")).toBe("1");
+  }
+});
+
+it("preserves an explicit non-retryable error contract on HTTP 502", async () => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: "INTERNAL_ERROR", retryable: false }, { status: 502 }));
+  await expect(getWorkContent(100)).rejects.toMatchObject({ code: "INTERNAL_ERROR", retryable: false });
+  expect(await getCacheEntry(100)).not.toBeNull();
+});
+
+it.each([
+  new TypeError("Body reception failed"),
+  new DOMException("Body reception aborted", "AbortError"),
+])("preserves saved content after body reception fails: %s", async error => {
+  const entry = makeEntry({ checkedAt: 0 });
+  await putCacheEntry(entry);
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"workId":'));
+      controller.error(error);
+    },
+  })));
+
+  expect((await getWorkContent(100)).title).toBe(entry.title);
+  expect(await getCacheEntry(100)).toMatchObject({ blocks: entry.blocks, checkedAt: 0, readingContentId: entry.readingContentId });
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+
+  _resetForTesting();
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  expect((await getWorkContent(100)).title).toBe(entry.title);
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it("allows retry after body reception fails without saved content", async () => {
+  const error = new TypeError("Body reception failed");
+  vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(new Response(new ReadableStream({ start(controller) { controller.error(error); } })))
+    .mockResolvedValueOnce(Response.json(apiWork(Date.now())));
+
+  await expect(getWorkContent(100)).rejects.toBe(error);
+  expect(await getCacheEntry(100)).toBeNull();
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBeNull();
+  expect((await getWorkContent(100)).title).toBe("新版");
+});
+
+it.each(['{"workId":', JSON.stringify({ workId: 100 })])("stops saved content after receiving invalid content: %s", async body => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(body));
+
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", "SOURCE_INVALID_CONTENT");
+  expect(await getCacheEntry(100)).toBeNull();
+  expect(localStorage.getItem("dayro:content-stopped:100")).toBe("1");
+  _resetForTesting();
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", "SOURCE_UNAVAILABLE");
+});
+
+it.each(["NOT_FOUND", "FORBIDDEN", "SOURCE_UNAVAILABLE", "SOURCE_INVALID_CONTENT"])("invalidates saved text after %s, including a subsequent offline open", async code => {
+  await putCacheEntry(makeEntry({ checkedAt: 0 }));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code, retryable: false }, { status: 502 }));
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", code);
+  expect(await getCacheEntry(100)).toBeNull();
+  _resetForTesting(); // Persisted stop marker survives a module reload.
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  await expect(getWorkContent(100)).rejects.toHaveProperty("code", "SOURCE_UNAVAILABLE");
+});
+it("does not report an aborted IDB transaction as a successful write", async () => {
+  const original = IDBObjectStore.prototype.put;
+  vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (this: IDBObjectStore, ...args: Parameters<typeof original>) {
+    const request = original.apply(this, args);
+    request.addEventListener("success", () => this.transaction.abort());
+    return request;
+  });
+  await expect(putCacheEntry(makeEntry())).rejects.toThrow();
+  expect(await getCacheEntry(100)).toBeNull();
+});
+
+it("composes daily publication, a 60-second pointer delay and a one-hour CDN response with the browser's 24-hour check interval", async () => {
+  const start = Date.parse("2026-09-06T00:00:00Z");
+  const day = 24 * 60 * 60 * 1000;
+  const pointerCheckedBeforePublication = start + day - 1000;
+  // The source changes just after the first daily sync. A CDN object is filled
+  // during the last second of the old pointer's 60-second validity.
+  const cdnFilled = start + day + 58_000;
+  const cdnExpires = cdnFilled + 60 * 60 * 1000;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(start);
+    await putCacheEntry(makeEntry({ checkedAt: start, delivery: { ...makeEntry().delivery!, validatedAt: new Date(start).toISOString() } }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(Date.now() < cdnExpires
+      ? { ...apiWork(pointerCheckedBeforePublication), title: "CDNに残る旧版" }
+      : { ...apiWork(Date.now()), title: "公開済みの訂正版" }));
+    vi.setSystemTime(cdnFilled);
+    expect((await getWorkContent(100)).title).toBe("CDNに残る旧版");
+    expect((await getCacheEntry(100))?.checkedAt).toBe(pointerCheckedBeforePublication);
+    vi.setSystemTime(cdnExpires);
+    expect((await getWorkContent(100)).title).toBe("CDNに残る旧版");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    vi.setSystemTime(pointerCheckedBeforePublication + day);
+    expect((await getWorkContent(100)).title).toBe("公開済みの訂正版");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
 });

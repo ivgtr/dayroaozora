@@ -4,6 +4,7 @@ export interface DailyWork {
 }
 
 export interface TodayResponse {
+  prefetchEnabled?: boolean;
   today: DailyWork;
   tomorrow: DailyWork;
 }
@@ -12,7 +13,20 @@ import type { ContentBlock, InlineNode } from "@/lib/aozora/types";
 
 export type { ContentBlock, InlineNode };
 
+export type WorkErrorCode = "NOT_FOUND" | "FORBIDDEN" | "SOURCE_UNAVAILABLE" | "SOURCE_TEMPORARY_ERROR" | "SOURCE_INVALID_CONTENT" | "SERVICE_UNAVAILABLE" | "INTERNAL_ERROR";
+export interface Delivery {
+  metadataGeneration: string;
+  metadataSyncedAt: string | null;
+  metadataState: "current" | "previous" | "legacy";
+  sourceRevision: string | null;
+  expectedSourceRevision: string | null;
+  contentId: string;
+  verification: "current" | "stale" | "unverified";
+  validatedAt: string | null;
+}
 export interface WorkResponse {
+  delivery?: Delivery;
+  readingContentId?: string;
   workId: number;
   title: string;
   author: string;
@@ -21,10 +35,13 @@ export interface WorkResponse {
 }
 
 export interface ErrorResponse {
+  code?: WorkErrorCode;
+  retryable?: boolean;
   error: string;
 }
 
 export interface TodayState {
+  readingContentId?: string;
   date: string;
   workId: number;
   progress: number;
@@ -39,6 +56,7 @@ export type ReadingPhase = "loading" | "transitioning" | "reading" | "error";
 export type BookshelfStatus = "favorite" | "completed" | "favorite_completed";
 
 export interface BookshelfEntry {
+  readingContentId?: string;
   workId: number;
   title: string | null;
   author: string | null;
